@@ -3,7 +3,7 @@
 %% @end
 %%%-------------------------------------------------------------------
 
--module(BNS_sup).
+-module(tBNS_sup).
 
 -behaviour(supervisor).
 
