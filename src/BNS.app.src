@@ -1,0 +1,19 @@
+{application, BNS,
+ [{description, "An OTP application"},
+  {vsn, "0.1.0"},
+  {registered, []},
+  {mod, { BNS_app, []}},
+  {applications,
+   [kernel,
+    stdlib,
+    cowboy,
+    erlang_protobuffs,
+    mysql_otp
+   ]},
+  {env,[]},
+  {modules, []},
+
+  {maintainers, []},
+  {licenses, []},
+  {links, []}
+ ]}.

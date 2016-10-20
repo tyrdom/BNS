@@ -1,2 +1,9 @@
-# BNS
-tcpPractice
+BNS
+=====
+
+An OTP application
+
+Build
+-----
+
+    $ rebar3 compile
