@@ -24,8 +24,8 @@
 
 -define(SERVER, ?MODULE).
 
--record(table, {tableId,playerCount}).
--record(player, {accountId,socket}).
+-record(table, {tablePid,tableId,playerCount}).
+-record(player, {socket,accountId}).
 -record(state, {playerList,roomList}).
 %%%===================================================================
 %%% API
@@ -80,11 +80,19 @@ init([]) ->
 	{noreply, NewState :: #state{}, timeout() | hibernate} |
 	{stop, Reason :: term(), Reply :: term(), NewState :: #state{}} |
 	{stop, Reason :: term(), NewState :: #state{}}).
-handle_call(inZone, _From, State) ->
 
+handle_call({inZone,Socket,AccountId}, _From, State) ->
+	PlayerList = State#state.playerList,
+	ets:insert(PlayerList,{Socket,AccountId}),
 	{reply, ok, State};
 
-handle_call(joinRoom, _From, State) ->
+handle_call({joinRoom,Socket}, _From, State) ->
+	PlayerList = State#state.playerList,
+	Rooms =State#state.roomList,
+	ets:lookup(PlayerList,Socket),
+	Aroom = matchroom(Rooms),
+	Aroom ! {join,Socket},
+
 	{reply, ok, State};
 
 handle_call(_Request, _From, State) ->
@@ -154,3 +162,6 @@ code_change(_OldVsn, State, _Extra) ->
 %%%===================================================================
 %%% Internal functions
 %%%===================================================================
+
+
+matchroom(_Rooms) ->todo. %TODO get a room which have a seat

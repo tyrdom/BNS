@@ -86,7 +86,7 @@ handle_call({login,Account,Password,Socket}, _From, State) ->
 	TempBank = State#state.etsTempBank,
 	Pid = State#state.mysqlPid,
 	{ok, _ColumnNames, Rows} =
-		mysql:query(Pid, <<"SELECT * FROM mytable WHERE accountId = ? AND password= ?">>, [Account,Password]),
+		mysql:query(Pid, <<"SELECT MONEY FROM mytable WHERE accountId = ? AND password= ?">>, [Account,Password]),
 	Account = #account {socket = Socket},
 	Reply = case Rows of
 		 _ -> ets:insert(TempBank,Rows), %TODO Rows maybe is not tuple and socket is the key of ets
@@ -95,18 +95,34 @@ handle_call({login,Account,Password,Socket}, _From, State) ->
 	end,
 	{Reply, ok, State};
 
+
 handle_call({checkmoney,Socket}, _From, State) ->
 	TempBank = State#state.etsTempBank,
 	ets:lookup(TempBank,Socket),
 	{reply, ok, State};
 
+
+handle_call({checkItem,Socket}, _From, State) ->
+	TempBank = State#state.etsTempBank,
+	ets:lookup(TempBank,Socket),
+	{reply, ok, State};
+
+
 handle_call({updata,Socket,MoneyData}, _From, State) ->
 	TempBank = State#state.etsTempBank,
 	ets:lookup(TempBank,Socket),
-	%check_account
+	%TODO check_account
 
+
+	{reply, ok, State};
+
+
+
+handle_call(_Request, _From, State) ->
+	{reply, ok, State};
+
+handle_call(_Request, _From, State) ->
 	{reply, ok, State}.
-
 %%--------------------------------------------------------------------
 %% @private
 %% @doc
