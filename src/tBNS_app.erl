@@ -3,19 +3,19 @@
 %% @end
 %%%-------------------------------------------------------------------
 
--module(BNS_app).
+-module(tBNS_app).
 
 -behaviour(application).
 
 %% Application callbacks
 -export([start/2, stop/1]).
-
+-include("net_settings.hrl").
 %%====================================================================
 %% API
 %%====================================================================
 
 start(_StartType, _StartArgs) ->
-    BNS_sup:start_link().
+    tcp_sup:start_link(?PORT).
 
 %%--------------------------------------------------------------------
 stop(_State) ->
