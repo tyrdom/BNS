@@ -16,7 +16,7 @@ encode() -> %test apps_test:encode().
   Person = #person{age=25, name="John"},
   iolist_to_binary(test_pb:encode(Person)).
 
-decode() ->
+decode() -> %test apps_test:encode(data).
   Data = encode(),
 
   test_pb:decode(Data).
