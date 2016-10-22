@@ -10,13 +10,13 @@
 -author("Administrator").
 -include("test_pb.hrl").
 %% API
--export([encode/0,encode2/0,decode/0,decode2/1,msqtry/0]).
+-export([encode/0,encode2/0,decode/0,decode2/1,msqtry/0,msqinst/0]).
 
 encode() -> %test apps_test:encode().
   Person = #person{age=25, name="John"},
   iolist_to_binary(test_pb:encode(Person)).
 
-decode() -> %test apps_test:encode(data).
+decode() -> %test apps_test:decode(data).
   Data = encode(),
 
   test_pb:decode(Data).
@@ -35,10 +35,17 @@ decode2(Data) -> %test test5_go:start().
 
   test_pb:decode_family(Data).
 
-msqtry() ->
+msqtry() -> %apps_test:msqtry().
   {ok, Pid} = mysql:start_link([{host, "192.168.1.243"}, {user, "root"},
     {password, "caiwei"}, {database, "tianhao"}]),
   {ok,ColumnNames,Rows} =
-    mysql:query(Pid, <<"SELECT daily_regist FROM fishnet_daily_base WHERE id = ?">>, [63]),
+    mysql:query(Pid, "SELECT account_id,password FROM account_auth WHERE account_id = ?", ["aaaa"]),
   io:format("~p~n",[ColumnNames]),
-  io:format("~p~n",[Rows]).
+  io:format("~p~n",Rows),
+  Rows.
+
+msqinst() -> %apps_test:msqinst().
+  {ok, Pid} = mysql:start_link([{host, "192.168.1.243"}, {user, "root"},
+    {password, "caiwei"}, {database, "tianhao"}]),
+  PS = accountBank:md5_string("dddd"),
+  ok = mysql:query(Pid, "INSERT INTO account_auth (account_id, password) VALUES (?, ?)", ["cccc", PS]).

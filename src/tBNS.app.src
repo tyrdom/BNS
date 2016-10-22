@@ -8,7 +8,8 @@
     stdlib,
     cowboy,
     erlang_protobuffs,
-    mysql_otp,esockd
+    mysql_otp,
+    esockd
    ]},
   {env,[]},
   {modules, []},

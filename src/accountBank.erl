@@ -11,8 +11,9 @@
 
 -behaviour(gen_server).
 
+-include("net_settings.hrl").
 %% API
--export([start_link/0]).
+-export([start_link/0,md5_string/1]).
 
 %% gen_server callbacks
 -export([init/1,
@@ -23,7 +24,6 @@
 	code_change/3]).
 
 -define(SERVER, ?MODULE).
--record(account,{socket, accountId, money}).
 -record(state, {etsTempBank,mysqlPid}).
 
 
@@ -62,8 +62,8 @@ start_link() ->
 	{stop, Reason :: term()} | ignore).
 init([]) ->
 	TempBank = ets:new(tempBank,[set]),
-	{ok,MySqlPid} = mysql:start_link([{host, "localhost"}, {user, "foo"},
-		{password, "hello"}, {database, "test"}]),
+	{ok,MySqlPid} = mysql:start_link([{host, ?MYSQL_IP}, {user, ?MYSQL_ID},
+		{password, ?MYSQL_PS}, {database, ?MYSQL_DB}]),
 	{ok, #state{etsTempBank = TempBank,mysqlPid = MySqlPid}}.
 
 %%--------------------------------------------------------------------
@@ -85,11 +85,14 @@ init([]) ->
 handle_call({login,Account,Password,Socket}, _From, State) ->
 	TempBank = State#state.etsTempBank,
 	Pid = State#state.mysqlPid,
+	PasswordInDB =md5_string(Password),
+
 	{ok, _ColumnNames, Rows} =
-		mysql:query(Pid, <<"SELECT MONEY FROM mytable WHERE accountId = ? AND password= ?">>, [Account,Password]),
-	Account = #account {socket = Socket},
+		mysql:query(Pid, <<"SELECT MONEY FROM mytable WHERE accountId = ? AND password= ?">>, [Account,PasswordInDB]),
+
+
 	Reply = case Rows of
-		 _ -> ets:insert(TempBank,Rows), %TODO Rows maybe is not tuple and socket is the key of ets
+		 _ -> ets:insert(TempBank,{Socket,Account}), %TODO Rows maybe is not tuple and socket is the key of ets
 			  access;
 		[]->dy
 	end,
@@ -111,12 +114,21 @@ handle_call({checkItem,Socket}, _From, State) ->
 handle_call({updata,Socket,MoneyData}, _From, State) ->
 	TempBank = State#state.etsTempBank,
 	ets:lookup(TempBank,Socket),
-	%TODO check_account
+	%TODO check_account_money
 
 
 	{reply, ok, State};
 
 
+handle_call({create_account,AccountId,Password}, _From, State) ->
+
+	%TODO create account!
+%	case account_is_exist() of
+	%	 _ -> no_no_no;
+	%	 [] -> ok
+	%end,
+
+	{reply, ok, State};
 
 handle_call(_Request, _From, State) ->
 	{reply, ok, State};
@@ -187,3 +199,15 @@ code_change(_OldVsn, State, _Extra) ->
 %%%===================================================================
 %%% Internal functions
 %%%===================================================================
+
+
+md5_string(String) ->
+	list_to_hex(binary_to_list(erlang:md5(String))).
+
+list_to_hex(List) -> lists:map(fun(X) ->int_to_hex(X) end ,List).
+
+int_to_hex(X) when X < 256 -> [hex(X div 16),hex(X rem 16)].
+
+hex(X) -> $C+X.
+
+

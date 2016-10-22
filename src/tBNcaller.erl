@@ -4,12 +4,16 @@
 %%% @doc
 %%%
 %%% @end
-%%% Created : 21. 十月 2016 8:44
+%%% Created : 22. 十月 2016 17:33
 %%%-------------------------------------------------------------------
+-module(tBNcaller).
 -author("Administrator").
 
--define(PORT,2333).
--define(MYSQL_IP,"local").
--define(MYSQL_ID,"root").
--define(MYSQL_PS,"caiwei").
--define(MYSQL_DB,"tianhao").
+%% API
+-export([call/1]).
+
+call(_Data) ->ok;
+
+
+
+call(_Data) ->ok.

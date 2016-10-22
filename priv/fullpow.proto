@@ -1,0 +1,18 @@
+message AccountReq {
+  required string accountId = 1;
+  required string password = 2;
+}
+
+message AccountResp {
+  repeated int32 reply = 1;
+}
+
+message AccountInfoReq {
+}
+
+message AccountInfoResp {
+	required string account_id = 1;
+	required string nickname = 2;
+	required int32 money = 3;
+
+}

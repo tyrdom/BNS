@@ -13,7 +13,7 @@
 -export([start/0]).
 
 start() -> %test probuff_build:start().
-  A="priv/test.proto",
+  A="priv/fullpow.proto",
   OutIncludeDir ="include",
   OutBeamDir = "_build/default/lib/tBNS/ebin",
 %%--------------------------------------------------------------------

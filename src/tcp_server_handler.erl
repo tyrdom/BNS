@@ -29,6 +29,17 @@ init([LSock]) ->
 
 handle_call(Msg, _From, State) ->
 	io:format("tcp handler call ~p~n", [Msg]),
+	{reply, {ok, Msg}, State};
+
+handle_call({send,Socket,{Code,Data}},_From,State) ->
+	BinaryData = iolist_to_binary(fullpow_pb:encode(Data)),
+
+	Reply = gen_tcp:send(Socket, BinaryData),
+	%TODO send Data to Socket
+	{reply,{ok, Reply} , State};
+
+handle_call(Msg, _From, State) ->
+	io:format("tcp handler call ~p~n", [Msg]),
 	{reply, {ok, Msg}, State}.
 
 handle_cast(tcp_accept, #state{lsock = LSock} = State) ->
@@ -42,15 +53,11 @@ handle_cast(stop, State) ->
 	{stop, normal, State}.
 
 handle_info({tcp, Socket, Data}, State) ->
-	inet:setopts(Socket, [{active, once}]),
+	inet:setopts(Socket, [{active, true}]),
 	io:format("tcp handler info ~p got message ~p~n", [self(), Data]),
-	%ok = gen_tcp:send(Socket, <<Data/binary>>),
+	Decode = fullpow_pb:decode(Data),
+	tBNcaller:call(Decode),
 	{noreply, State, ?Timeout};
-
-handle_info({send,Socket,Data},State) ->
-
-	%TODO send Data to Socket
-	{noreply, State};
 
 handle_info({tcp_closed, _Socket}, #state{addr=Addr} = State) ->
 	io:format("tcp handler info ~p client ~p disconnected~n", [self(), Addr]),
