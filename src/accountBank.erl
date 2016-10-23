@@ -93,8 +93,10 @@ handle_call({login,Account,Password,Socket,Spid}, _From, State) ->
 
 	Reply = case Rows of
 		        _ -> ets:insert(TempBank,{Socket,Spid,Account}),
-
-			        callserver(zoneIn,Account,Spid,Socket),%TODO In startzone
+			            CMDCode = <<4>>,
+			            Resp = 1,
+									Spid!{Socket,CMDCode,Resp},
+			        %TODO In startzone
 
 			        access;
 		        []->dy
@@ -123,13 +125,20 @@ handle_call({updata,Socket,MoneyData}, _From, State) ->
 	{reply, ok, State};
 
 
-handle_call({create_account,AccountId,Password}, _From, State) ->
+handle_call({create,AccountId,Password,Socket,Spid}, _From, State) ->
 
+	Pid = State#state.mysqlPid,
 	%TODO create account!
-%	case account_is_exist() of
-	%	 _ -> no_no_no;
-	%	 [] -> ok
-	%end,
+	PasswordInDB =md5_string(Password),
+	{ok, _ColumnNames, Rows} =
+		mysql:query(Pid, <<"SELECT accountId FROM account_auth WHERE accountId = ?">>, [AccountId]),
+
+	case Rows of
+		  _ -> no_no_no ,
+			  Spid!{Socket };
+		 [] ->	mysql:query(Pid, "INSERT INTO account_auth (account_id, password) VALUES (?, ?)", [AccountId, PasswordInDB]),
+			  ok
+	end,
 
 	{reply, ok, State};
 
@@ -215,4 +224,6 @@ hex(X) -> $C+X.
 
 
 %handle_call({login,Account,Password,Socket,Spid}, _From, State)
-login(Account,Password,Socket,Spid)->gen_server:call(?SERVER,({login,Account,Password,Socket,Spid}).
+login(Account,Password,Socket,Spid)->
+	gen_server:call(?SERVER,({login,Account,Password,Socket,Spid}),ok.
+create(AccountId,Password,Socket,Spid) -> gen_server:call(?SERVER,({create,AccountId,Password,Socket,Spid}),ok.
