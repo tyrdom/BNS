@@ -13,7 +13,7 @@
 
 -include("net_settings.hrl").
 %% API
--export([start_link/0,md5_string/1]).
+-export([start_link/0,md5_string/1,login/4]).
 
 %% gen_server callbacks
 -export([init/1,
@@ -82,20 +82,23 @@ init([]) ->
 	{stop, Reason :: term(), Reply :: term(), NewState :: #state{}} |
 	{stop, Reason :: term(), NewState :: #state{}}).
 
-handle_call({login,Account,Password,Socket}, _From, State) ->
+handle_call({login,Account,Password,Socket,Spid}, _From, State) ->
 	TempBank = State#state.etsTempBank,
 	Pid = State#state.mysqlPid,
 	PasswordInDB =md5_string(Password),
 
 	{ok, _ColumnNames, Rows} =
-		mysql:query(Pid, <<"SELECT MONEY FROM mytable WHERE accountId = ? AND password= ?">>, [Account,PasswordInDB]),
+		mysql:query(Pid, <<"SELECT accountId FROM account_auth WHERE accountId = ? AND password= ?">>, [Account,PasswordInDB]),
 
 
 	Reply = case Rows of
-		 _ -> ets:insert(TempBank,{Socket,Account}), %TODO Rows maybe is not tuple and socket is the key of ets
-			  access;
-		[]->dy
-	end,
+		        _ -> ets:insert(TempBank,{Socket,Spid,Account}),
+
+			        callserver(zoneIn,Account,Spid,Socket),%TODO In startzone
+
+			        access;
+		        []->dy
+	        end,
 	{Reply, ok, State};
 
 
@@ -211,3 +214,5 @@ int_to_hex(X) when X < 256 -> [hex(X div 16),hex(X rem 16)].
 hex(X) -> $C+X.
 
 
+%handle_call({login,Account,Password,Socket,Spid}, _From, State)
+login(Account,Password,Socket,Spid)->gen_server:call(?SERVER,({login,Account,Password,Socket,Spid}).

@@ -1,16 +1,29 @@
-message AccountReq {
+//1
+message AccountCreateReq {
   required string accountId = 1;
   required string password = 2;
 }
-
-message AccountResp {
+//2
+message AccountCreateResp {
   repeated int32 reply = 1;
 }
 
-message AccountInfoReq {
+
+//3
+message AccountLoginReq {
+  required string accountId = 1;
+  required string password = 2;
+}
+//4
+message AccountLoginResp {
+  repeated int32 reply = 1;
 }
 
-message AccountInfoResp {
+//5
+message AccountCheckMoneyReq {
+}
+//6
+message AccountCheckMoneyResp {
 	required string account_id = 1;
 	required string nickname = 2;
 	required int32 money = 3;

@@ -25,7 +25,7 @@
 -define(SERVER, ?MODULE).
 
 -record(table, {tablePid,tableId,playerCount}).
--record(player, {socket,accountId}).
+
 -record(state, {playerList,roomList}).
 %%%===================================================================
 %%% API

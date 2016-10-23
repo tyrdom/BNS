@@ -10,10 +10,16 @@
 -author("Administrator").
 
 %% API
--export([call/1]).
+-export([call/3]).
 
-call(_Data) ->ok;
+call(Data,Socket,Pid) ->
+	<<Number:1/binary,Msg/binary>> = Data,
+	case Number of
+		<<3>> ->
+			{accountLoginReq,Account,Password}=fullpow_pb:decode(accountLoginReq,Msg),
+			accountBank:login(binary_to_list(Account),binary_to_list(Password),Socket,Pid);
+		_Other -> unknown
+	end;
 
 
-
-call(_Data) ->ok.
+call(_,_,_) ->ok.
