@@ -8,8 +8,8 @@
 %%%-------------------------------------------------------------------
 -author("Administrator").
 
--define(PORT,2333).
--define(MYSQL_IP,"local").
+-define(PORT,2222).
+-define(MYSQL_IP,"192.168.1.243").
 -define(MYSQL_ID,"root").
 -define(MYSQL_PS,"caiwei").
 -define(MYSQL_DB,"tianhao").

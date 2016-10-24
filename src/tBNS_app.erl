@@ -14,8 +14,8 @@
 %% API
 %%====================================================================
 
-start(_StartType, _StartArgs) ->
-    tcp_sup:start_link(?PORT).
+start(_StartType, _StartArgs) -> % tBNS_app:start(a,b).
+    tcp_server_app:start(?PORT),accountBank:start_link().
 
 %%--------------------------------------------------------------------
 stop(_State) ->

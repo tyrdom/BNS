@@ -5,7 +5,7 @@ message AccountCreateReq {
 }
 //2
 message AccountCreateResp {
-  repeated int32 reply = 1;
+  repeated int32 reply = 1; //0：其他异常 1：正常 2：账号已存在
 }
 
 
@@ -16,7 +16,7 @@ message AccountLoginReq {
 }
 //4
 message AccountLoginResp {
-  repeated int32 reply = 1;
+  repeated int32 reply = 1; //1：正常 2：异常
 }
 
 //5

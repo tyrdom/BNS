@@ -1,28 +1,43 @@
--ifndef(ACCOUNTREQ_PB_H).
--define(ACCOUNTREQ_PB_H, true).
--record(accountreq, {
+-ifndef(ACCOUNTCREATEREQ_PB_H).
+-define(ACCOUNTCREATEREQ_PB_H, true).
+-record(accountcreatereq, {
     accountid = erlang:error({required, accountid}),
     password = erlang:error({required, password})
 }).
 -endif.
 
--ifndef(ACCOUNTRESP_PB_H).
--define(ACCOUNTRESP_PB_H, true).
--record(accountresp, {
+-ifndef(ACCOUNTCREATERESP_PB_H).
+-define(ACCOUNTCREATERESP_PB_H, true).
+-record(accountcreateresp, {
     reply = []
 }).
 -endif.
 
--ifndef(ACCOUNTINFOREQ_PB_H).
--define(ACCOUNTINFOREQ_PB_H, true).
--record(accountinforeq, {
+-ifndef(ACCOUNTLOGINREQ_PB_H).
+-define(ACCOUNTLOGINREQ_PB_H, true).
+-record(accountloginreq, {
+    accountid = erlang:error({required, accountid}),
+    password = erlang:error({required, password})
+}).
+-endif.
+
+-ifndef(ACCOUNTLOGINRESP_PB_H).
+-define(ACCOUNTLOGINRESP_PB_H, true).
+-record(accountloginresp, {
+    reply = []
+}).
+-endif.
+
+-ifndef(ACCOUNTCHECKMONEYREQ_PB_H).
+-define(ACCOUNTCHECKMONEYREQ_PB_H, true).
+-record(accountcheckmoneyreq, {
     
 }).
 -endif.
 
--ifndef(ACCOUNTINFORESP_PB_H).
--define(ACCOUNTINFORESP_PB_H, true).
--record(accountinforesp, {
+-ifndef(ACCOUNTCHECKMONEYRESP_PB_H).
+-define(ACCOUNTCHECKMONEYRESP_PB_H, true).
+-record(accountcheckmoneyresp, {
     account_id = erlang:error({required, account_id}),
     nickname = erlang:error({required, nickname}),
     money = erlang:error({required, money})

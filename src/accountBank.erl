@@ -13,7 +13,7 @@
 
 -include("net_settings.hrl").
 %% API
--export([start_link/0,md5_string/1,login/4]).
+-export([start_link/0,md5_string/1,login/4,create/4]).
 
 %% gen_server callbacks
 -export([init/1,
@@ -85,23 +85,37 @@ init([]) ->
 handle_call({login,Account,Password,Socket,Spid}, _From, State) ->
 	TempBank = State#state.etsTempBank,
 	Pid = State#state.mysqlPid,
-	PasswordInDB =md5_string(Password),
+  PasswordInDB =md5_string(Password),
 
-	{ok, _ColumnNames, Rows} =
-		mysql:query(Pid, <<"SELECT accountId FROM account_auth WHERE accountId = ? AND password= ?">>, [Account,PasswordInDB]),
+  Online = ets:lookup(TempBank,Account),
+  case Online of
+    []->
 
+      {ok, _ColumnNames, Rows} =
+      mysql:query(Pid, <<"SELECT account_id FROM account_auth WHERE account_id = ? AND password= ?">>, [Account,PasswordInDB]),
+      io:format("in mysql find ~p ~n",[Rows]),
 
-	Reply = case Rows of
-		        _ -> ets:insert(TempBank,{Socket,Spid,Account}),
+	    case Rows of
+            [_] -> ets:insert(TempBank,{Account,Socket,Spid,PasswordInDB}),
 			            CMDCode = <<4>>,
-			            Resp = 1,
-									Spid!{Socket,CMDCode,Resp},
+									Resp = {accountloginresp,1},
+              io:format("bank send resp ~n"),
+                  tcp_server_handler:send(Spid,Socket,CMDCode,Resp);
 			        %TODO In startzone
 
-			        access;
-		        []->dy
-	        end,
-	{Reply, ok, State};
+		        []->
+              CMDCode = <<4>>,
+              Resp = {accountloginresp,2},
+              io:format("bank send resp ~n"),
+              tcp_server_handler:send(Spid,Socket,CMDCode,Resp)
+	        end;
+    [{Account,OldSocket,OldSpid,PasswordInDB}] ->
+      OldSpid ! {tcp_closed, OldSocket},
+      ets:delete(TempBank,Account),
+      login(Account,Password,Socket,Spid);
+    _Other -> wrong
+  end,
+	{reply, ok, State};
 
 
 handle_call({checkmoney,Socket}, _From, State) ->
@@ -116,7 +130,7 @@ handle_call({checkItem,Socket}, _From, State) ->
 	{reply, ok, State};
 
 
-handle_call({updata,Socket,MoneyData}, _From, State) ->
+handle_call({updata,Socket,_MoneyData}, _From, State) ->
 	TempBank = State#state.etsTempBank,
 	ets:lookup(TempBank,Socket),
 	%TODO check_account_money
@@ -131,19 +145,23 @@ handle_call({create,AccountId,Password,Socket,Spid}, _From, State) ->
 	%TODO create account!
 	PasswordInDB =md5_string(Password),
 	{ok, _ColumnNames, Rows} =
-		mysql:query(Pid, <<"SELECT accountId FROM account_auth WHERE accountId = ?">>, [AccountId]),
+		mysql:query(Pid, <<"SELECT account_id FROM account_auth WHERE account_id = ?">>, [AccountId]),
 
 	case Rows of
-		  _ -> no_no_no ,
-			  Spid!{Socket };
-		 [] ->	mysql:query(Pid, "INSERT INTO account_auth (account_id, password) VALUES (?, ?)", [AccountId, PasswordInDB]),
-			  ok
+		  [_] ->
+        CMDCode = <<2>>,
+        Resp = {accountcreateresp,2},
+        tcp_server_handler:send(Spid,Socket,CMDCode,Resp);
+
+		  [] ->
+        mysql:query(Pid, "INSERT INTO account_auth (account_id, password) VALUES (?, ?)", [AccountId, PasswordInDB]),
+        CMDCode = <<2>>,
+        Resp = {accountcreateresp,1},
+        tcp_server_handler:send(Spid,Socket,CMDCode,Resp)
 	end,
-
 	{reply, ok, State};
 
-handle_call(_Request, _From, State) ->
-	{reply, ok, State};
+
 
 handle_call(_Request, _From, State) ->
 	{reply, ok, State}.
@@ -223,7 +241,9 @@ int_to_hex(X) when X < 256 -> [hex(X div 16),hex(X rem 16)].
 hex(X) -> $C+X.
 
 
-%handle_call({login,Account,Password,Socket,Spid}, _From, State)
-login(Account,Password,Socket,Spid)->
-	gen_server:call(?SERVER,({login,Account,Password,Socket,Spid}),ok.
-create(AccountId,Password,Socket,Spid) -> gen_server:call(?SERVER,({create,AccountId,Password,Socket,Spid}),ok.
+login(Account,Password,Socket,Spid) ->
+		gen_server:call(?SERVER,{login,Account,Password,Socket,Spid}).
+
+create(AccountId,Password,Socket,Spid) ->
+    gen_server:call(?SERVER,{create,AccountId,Password,Socket,Spid}).
+

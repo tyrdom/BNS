@@ -10,16 +10,16 @@
 -author("Administrator").
 -include("test_pb.hrl").
 %% API
--export([encode/0,encode2/0,decode/0,decode2/1,msqtry/0,msqinst/0]).
+-export([encode/0,encode2/0,decode/1,decode2/1,msqtry/0,msqinst/0]).
 
 encode() -> %test apps_test:encode().
   Person = #person{age=25, name="John"},
-  iolist_to_binary(test_pb:encode(Person)).
+  iolist_to_binary(test_pb:encode_person(25,"jjj")).
 
-decode() -> %test apps_test:decode(data).
-  Data = encode(),
+decode(Data) -> %test apps_test:decode(data).
 
-  test_pb:decode(Data).
+
+  test_pb:decode_person(Data).
 
 encode2() -> %test apps_test:encode2().
   RepeatData =
@@ -31,17 +31,18 @@ encode2() -> %test apps_test:encode2().
   Family = #family{person=RepeatData},
   iolist_to_binary(test_pb:encode_family(Family)).
 
-decode2(Data) -> %test test5_go:start().
+decode2(Data) -> %test apps_test:dncode2(Data).
 
   test_pb:decode_family(Data).
 
 msqtry() -> %apps_test:msqtry().
   {ok, Pid} = mysql:start_link([{host, "192.168.1.243"}, {user, "root"},
     {password, "caiwei"}, {database, "tianhao"}]),
-  {ok,ColumnNames,Rows} =
-    mysql:query(Pid, "SELECT account_id,password FROM account_auth WHERE account_id = ?", ["aaaa"]),
-  io:format("~p~n",[ColumnNames]),
-  io:format("~p~n",Rows),
+  PasswordInDB =accountBank:md5_string("dddd"),
+
+  {ok, _ColumnNames, Rows} =
+    mysql:query(Pid, <<"SELECT account_id FROM account_auth WHERE account_id = ? AND password= ?">>, ["cccc",PasswordInDB]),
+
   Rows.
 
 msqinst() -> %apps_test:msqinst().
@@ -49,3 +50,6 @@ msqinst() -> %apps_test:msqinst().
     {password, "caiwei"}, {database, "tianhao"}]),
   PS = accountBank:md5_string("dddd"),
   ok = mysql:query(Pid, "INSERT INTO account_auth (account_id, password) VALUES (?, ?)", ["cccc", PS]).
+
+httptest() ->
+  cowboy:start_https(a,a,a,a).

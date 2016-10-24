@@ -16,8 +16,10 @@ call(Data,Socket,Pid) ->
 	<<Number:1/binary,Msg/binary>> = Data,
 	case Number of
 		<<3>> ->
-			{accountLoginReq,Account,Password}=fullpow_pb:decode(accountLoginReq,Msg),
-			accountBank:login(binary_to_list(Account),binary_to_list(Password),Socket,Pid);
+			{accountloginreq,Account,Password} = fullpow_pb:decode_accountloginreq(Msg),
+			accountBank:login(Account,Password,Socket,Pid);
+		<<1>>  -> {accountcreatereq,Account,Password} = fullpow_pb:decode_accountcreatereq(Msg),
+			accountBank:create(Account,Password,Socket,Pid);
 		_Other -> unknown
 	end;
 
