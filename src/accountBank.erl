@@ -97,6 +97,7 @@ handle_call({login,Account,Password,Socket,Spid}, _From, State) ->
 
 	    case Rows of
             [_] -> ets:insert(TempBank,{Account,Socket,Spid,PasswordInDB}),
+									zone:inZone(),
 			            CMDCode = <<4>>,
 									Resp = {accountloginresp,1},
               io:format("bank send resp ~n"),
