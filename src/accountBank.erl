@@ -97,7 +97,7 @@ handle_call({login,Account,Password,Socket,Spid}, _From, State) ->
 
 	    case Rows of
             [_] -> ets:insert(TempBank,{Account,Socket,Spid,PasswordInDB}),
-									zone:inZone(),
+									zone:inZone(Account,Socket,Spid),
 			            CMDCode = <<4>>,
 									Resp = {accountloginresp,1},
               io:format("bank send resp ~n"),
@@ -112,8 +112,7 @@ handle_call({login,Account,Password,Socket,Spid}, _From, State) ->
 	        end;
     [{Account,OldSocket,OldSpid,PasswordInDB}] ->
       OldSpid ! {tcp_closed, OldSocket},
-      ets:delete(TempBank,Account),
-      login(Account,Password,Socket,Spid);
+      ets:delete(TempBank,Account);
     _Other -> wrong
   end,
 	{reply, ok, State};

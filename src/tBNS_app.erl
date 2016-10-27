@@ -15,7 +15,7 @@
 %%====================================================================
 
 start(_StartType, _StartArgs) -> % tBNS_app:start(a,b).
-    tcp_server_app:start(?PORT),accountBank:start_link().
+    tcp_server_app:start(?PORT),accountBank:start_link(),zone:start_link().
 
 %%--------------------------------------------------------------------
 stop(_State) ->

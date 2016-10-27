@@ -12,7 +12,7 @@
 -behaviour(gen_server).
 
 %% API
--export([start_link/0]).
+-export([start_link/0,inZone/3]).
 
 %% gen_server callbacks
 -export([init/1,
@@ -89,7 +89,7 @@ handle_call({autojoinRoom,Socket,Spid,Account}, _From, State) ->
 	PlayerList = State#state.playerList,
 	Rooms =State#state.roomList,
 	ets:lookup(PlayerList,Socket),
-	[[{RoomPid,PlayerNum,unfull}]] = ets:match(Rooms,{_,_,unfull},1),
+	[[{RoomPid,PlayerNum,unfull}]] = ets:match(Rooms,{'_','_',unfull},1),
 	room:join(RoomPid,Spid,Socket,Account),
 	case PlayerNum  < ?ROOMMAX-1 of
 		false ->ets:insert(Rooms,{RoomPid,?ROOMMAX,full});
@@ -113,7 +113,7 @@ handle_call({outZone,Socket,Spid,_Account}, _From, State) ->
 
 		[_] ->ets:delete(PlayerList,Socket),
 			ok;
-		[] ->error,Spid ! {tcp_closed, _Socket}
+		[] ->error,Spid ! {tcp_closed, Socket}
 	end,
 
 	{reply, ok, State};
@@ -121,10 +121,10 @@ handle_call({outZone,Socket,Spid,_Account}, _From, State) ->
 handle_call({joinRoom,Socket,Spid,Account,RoomPid}, _From, State) ->
 	Rooms = State#state.roomList,
 	case ets:lookup(Rooms,RoomPid) of
-		[] -> error, Spid ! {tcp_closed, _Socket};
+		[] -> error, Spid ! {tcp_closed, Socket};
 		[{RoomPid,PlayerNum,Status}] ->
 			case Status of
-					full -> error,Spid ! {tcp_closed, _Socket};
+					full -> error,Spid ! {tcp_closed, Socket};
 					unfull ->
 						room:join(RoomPid,Spid,Socket,Account),
 						case PlayerNum  < ?ROOMMAX-1 of

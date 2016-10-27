@@ -19,7 +19,7 @@ loop(Socket) ->
 				 <<4>> -> Back = fullpow_pb:decode_accountloginresp(Msg),
 				io:format("client recieve ~p ~n",[Back]),
 				loop(Socket);
-				_->error
+				Other->io:format("client recieve ~p ~n",[Other])
 end
 	after 3000 ->
 			Account = "cddd",

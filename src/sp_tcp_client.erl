@@ -4,33 +4,32 @@
 %%% @doc
 %%%
 %%% @end
-%%% Created : 21. 十月 2016 12:02
+%%% Created : 27. 十月 2016 19:29
 %%%-------------------------------------------------------------------
--module(room).
+-module(sp_tcp_client).
 -author("Administrator").
 
 -behaviour(gen_server).
 
-
 %% API
--export([start_link/0]).
+-export([start_link/1,start/1]).
 
 %% gen_server callbacks
 -export([init/1,
-	handle_call/3,
-	handle_cast/2,
-	handle_info/2,
-	terminate/2,
-	code_change/3]).
+  handle_call/3,
+  handle_cast/2,
+  handle_info/2,
+  terminate/2,
+  code_change/3]).
 
 -define(SERVER, ?MODULE).
--record(player, {accountId, socket, seat,movement}).
--record(state, {}).
+
+-record(state, {csocket}).
 
 %%%===================================================================
 %%% API
 %%%===================================================================
-
+start(CSocket) -> start_link(CSocket).
 %%--------------------------------------------------------------------
 %% @doc
 %% Starts the server
@@ -38,9 +37,9 @@
 %% @end
 %%--------------------------------------------------------------------
 -spec(start_link() ->
-	{ok, Pid :: pid()} | ignore | {error, Reason :: term()}).
-start_link() ->
-	gen_server:start_link(?MODULE, [], []).
+  {ok, Pid :: pid()} | ignore | {error, Reason :: term()}).
+start_link(CSocket) ->
+  gen_server:start_link( ?MODULE, [CSocket], []).
 
 %%%===================================================================
 %%% gen_server callbacks
@@ -58,10 +57,12 @@ start_link() ->
 %% @end
 %%--------------------------------------------------------------------
 -spec(init(Args :: term()) ->
-	{ok, State :: #state{}} | {ok, State :: #state{}, timeout() | hibernate} |
-	{stop, Reason :: term()} | ignore).
-init([]) ->
-	{ok, #state{}}.
+  {ok, State :: #state{}} | {ok, State :: #state{}, timeout() | hibernate} |
+  {stop, Reason :: term()} | ignore).
+init([CSocket]) ->
+  erlang:process_flag(trap_exit, true),
+  inet:setopts(CSocket,[{active,once}]),
+  {ok, #state{csocket = CSocket}}.
 
 %%--------------------------------------------------------------------
 %% @private
@@ -71,15 +72,15 @@ init([]) ->
 %% @end
 %%--------------------------------------------------------------------
 -spec(handle_call(Request :: term(), From :: {pid(), Tag :: term()},
-		State :: #state{}) ->
-	{reply, Reply :: term(), NewState :: #state{}} |
-	{reply, Reply :: term(), NewState :: #state{}, timeout() | hibernate} |
-	{noreply, NewState :: #state{}} |
-	{noreply, NewState :: #state{}, timeout() | hibernate} |
-	{stop, Reason :: term(), Reply :: term(), NewState :: #state{}} |
-	{stop, Reason :: term(), NewState :: #state{}}).
+    State :: #state{}) ->
+  {reply, Reply :: term(), NewState :: #state{}} |
+  {reply, Reply :: term(), NewState :: #state{}, timeout() | hibernate} |
+  {noreply, NewState :: #state{}} |
+  {noreply, NewState :: #state{}, timeout() | hibernate} |
+  {stop, Reason :: term(), Reply :: term(), NewState :: #state{}} |
+  {stop, Reason :: term(), NewState :: #state{}}).
 handle_call(_Request, _From, State) ->
-	{reply, ok, State}.
+  {reply, ok, State}.
 
 %%--------------------------------------------------------------------
 %% @private
@@ -89,11 +90,11 @@ handle_call(_Request, _From, State) ->
 %% @end
 %%--------------------------------------------------------------------
 -spec(handle_cast(Request :: term(), State :: #state{}) ->
-	{noreply, NewState :: #state{}} |
-	{noreply, NewState :: #state{}, timeout() | hibernate} |
-	{stop, Reason :: term(), NewState :: #state{}}).
+  {noreply, NewState :: #state{}} |
+  {noreply, NewState :: #state{}, timeout() | hibernate} |
+  {stop, Reason :: term(), NewState :: #state{}}).
 handle_cast(_Request, State) ->
-	{noreply, State}.
+  {noreply, State}.
 
 %%--------------------------------------------------------------------
 %% @private
@@ -106,11 +107,27 @@ handle_cast(_Request, State) ->
 %% @end
 %%--------------------------------------------------------------------
 -spec(handle_info(Info :: timeout() | term(), State :: #state{}) ->
-	{noreply, NewState :: #state{}} |
-	{noreply, NewState :: #state{}, timeout() | hibernate} |
-	{stop, Reason :: term(), NewState :: #state{}}).
+  {noreply, NewState :: #state{}} |
+  {noreply, NewState :: #state{}, timeout() | hibernate} |
+  {stop, Reason :: term(), NewState :: #state{}}).
+handle_info({tcp, Socket, Data}, State) ->
+ % inet:setopts(Socket, [{active, once}]), % HINT change once to true
+  io:format("tcp handler info ~p got message ~p~n", [self(), Data]),
+
+  tBNcaller:call(Data,Socket,self()),
+  {noreply, State};
+
+handle_info({send,Socket,{Code,Resp}}, State) ->
+  io:format("~p server want send ~p ~p ~n",[self(),Code,Resp]),
+  BinaryData = iolist_to_binary(fullpow_pb:encode(Resp)),
+  Pack= list_to_binary([Code,BinaryData]),
+  gen_tcp:send(Socket, Pack),
+  inet:setopts(Socket, [{active, once}]),
+  {noreply, State};
+
+
 handle_info(_Info, State) ->
-	{noreply, State}.
+  {noreply, State}.
 
 %%--------------------------------------------------------------------
 %% @private
@@ -124,9 +141,9 @@ handle_info(_Info, State) ->
 %% @end
 %%--------------------------------------------------------------------
 -spec(terminate(Reason :: (normal | shutdown | {shutdown, term()} | term()),
-		State :: #state{}) -> term()).
+    State :: #state{}) -> term()).
 terminate(_Reason, _State) ->
-	ok.
+  ok.
 
 %%--------------------------------------------------------------------
 %% @private
@@ -137,10 +154,10 @@ terminate(_Reason, _State) ->
 %% @end
 %%--------------------------------------------------------------------
 -spec(code_change(OldVsn :: term() | {down, term()}, State :: #state{},
-		Extra :: term()) ->
-	{ok, NewState :: #state{}} | {error, Reason :: term()}).
+    Extra :: term()) ->
+  {ok, NewState :: #state{}} | {error, Reason :: term()}).
 code_change(_OldVsn, State, _Extra) ->
-	{ok, State}.
+  {ok, State}.
 
 %%%===================================================================
 %%% Internal functions

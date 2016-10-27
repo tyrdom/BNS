@@ -23,7 +23,7 @@ start_link(LSock) ->
 
 init([LSock]) ->
 	io:format("tcp handler init ~p ~n",[self()]),
-	inet:setopts(LSock, [{active, true}]), % HINT change once to true
+	inet:setopts(LSock, [{active, once}]), % HINT change once to true
 	gen_server:cast(self(), tcp_accept),
 	{ok, #state{lsock = LSock}}.
 
@@ -55,14 +55,14 @@ handle_cast(stop, State) ->
 	{stop, normal, State}.
 
 handle_info({tcp, Socket, Data}, State) ->
-%	inet:setopts(Socket, [{active, once}]), % HINT change once to true
+	inet:setopts(Socket, [{active, once}]), % HINT change once to true
 	io:format("tcp handler info ~p got message ~p~n", [self(), Data]),
 
 	tBNcaller:call(Data,Socket,self()),
 	{noreply, State, ?Timeout};
 
 handle_info({send,Socket,{Code,Resp}}, State) ->
-	%	inet:setopts(Socket, [{active, once}]),
+	inet:setopts(Socket, [{active, once}]),
  	io:format("~p server want send ~p ~p ~n",[self(),Code,Resp]),
  	BinaryData = iolist_to_binary(fullpow_pb:encode(Resp)),
  	Pack= list_to_binary([Code,BinaryData]),
