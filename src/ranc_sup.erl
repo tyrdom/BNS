@@ -4,9 +4,9 @@
 %%% @doc
 %%%
 %%% @end
-%%% Created : 27. 十月 2016 10:05
+%%% Created : 31. 十月 2016 18:35
 %%%-------------------------------------------------------------------
--module(sp_tcp_sup).
+-module(ranc_sup).
 -author("Administrator").
 
 -behaviour(supervisor).
@@ -57,19 +57,13 @@ start_link() ->
   {error, Reason :: term()}).
 init([]) ->
   RestartStrategy = one_for_one,
-  MaxRestarts = 1000,
-  MaxSecondsBetweenRestarts = 3600,
+  MaxRestarts = 10,
+  MaxSecondsBetweenRestarts = 10,
 
   SupFlags = {RestartStrategy, MaxRestarts, MaxSecondsBetweenRestarts},
 
-  Restart = permanent,
-  Shutdown = 2000,
-  Type = worker,
 
-  AChild = {'AName', {'AModule', start_link, []},
-    Restart, Shutdown, Type, ['AModule']},
-
-  {ok, {SupFlags, [AChild]}}.
+  {ok, {SupFlags, []}}.
 
 %%%===================================================================
 %%% Internal functions

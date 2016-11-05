@@ -40,8 +40,10 @@ msqtry() -> %apps_test:msqtry().
     {password, "caiwei"}, {database, "tianhao"}]),
   PasswordInDB =accountBank:md5_string("dddd"),
 
+%%  {ok, _ColumnNames, Rows} =
+%%    mysql:query(Pid, <<"SELECT account_id,password,up_time FROM account_auth WHERE account_id = ? AND password= ?">>, ["cccc",PasswordInDB]),
   {ok, _ColumnNames, Rows} =
-    mysql:query(Pid, <<"SELECT account_id FROM account_auth WHERE account_id = ? AND password= ?">>, ["cccc",PasswordInDB]),
+    mysql:query(Pid, <<"SELECT id,globe_in,globe_out FROM cacula_globe WHERE id = ? ">>, [1]),
 
   Rows.
 
@@ -50,6 +52,3 @@ msqinst() -> %apps_test:msqinst().
     {password, "caiwei"}, {database, "tianhao"}]),
   PS = accountBank:md5_string("dddd"),
   ok = mysql:query(Pid, "INSERT INTO account_auth (account_id, password) VALUES (?, ?)", ["cccc", PS]).
-
-httptest() ->
-  cowboy:start_https(a,a,a,a).

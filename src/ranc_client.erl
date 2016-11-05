@@ -4,15 +4,16 @@
 %%% @doc
 %%%
 %%% @end
-%%% Created : 27. 十月 2016 19:29
+%%% Created : 31. 十月 2016 18:37
 %%%-------------------------------------------------------------------
--module(sp_tcp_client).
+-module(ranc_client).
 -author("Administrator").
 
 -behaviour(gen_server).
+-behaviour(ranch_protocol).
 
 %% API
--export([start_link/1,start/1]).
+-export([start_link/4,init/4]).
 
 %% gen_server callbacks
 -export([init/1,
@@ -23,23 +24,23 @@
   code_change/3]).
 
 -define(SERVER, ?MODULE).
-
--record(state, {csocket}).
+-define(TIMEOUT, 10000).
+-record(state, {socket,transport}).
 
 %%%===================================================================
 %%% API
 %%%===================================================================
-start(CSocket) -> sp_tcp_cl_sup:start_child(CSocket).
+
 %%--------------------------------------------------------------------
 %% @doc
 %% Starts the server
 %%
 %% @end
 %%--------------------------------------------------------------------
--spec(start_link(Args::term()) ->
+-spec(start_link(Ref::term(),Socket::term(),Transport::term(),Opts::term()) ->
   {ok, Pid :: pid()} | ignore | {error, Reason :: term()}).
-start_link(CSocket) ->
-  gen_server:start_link( ?MODULE, [CSocket], []).
+start_link(Ref,Socket,Transport,Opts) ->
+  proc_lib:start_link( ?MODULE,init, [Ref,Socket,Transport,Opts]).
 
 %%%===================================================================
 %%% gen_server callbacks
@@ -59,11 +60,16 @@ start_link(CSocket) ->
 -spec(init(Args :: term()) ->
   {ok, State :: #state{}} | {ok, State :: #state{}, timeout() | hibernate} |
   {stop, Reason :: term()} | ignore).
-init([CSocket]) ->
-  erlang:process_flag(trap_exit, true),
-  inet:setopts(CSocket,[{active,true}]),
-  io:format("client online"),
-  {ok, #state{csocket = CSocket}}.
+init([]) ->
+  {ok, undefined}.
+
+init(Ref, Socket, Transport, _Opts = []) ->
+  ok = proc_lib:init_ack({ok, self()}),
+  ok = ranch:accept_ack(Ref),
+  ok = Transport:setopts(Socket, [{active, 5}, {packet, 4}]),
+  gen_server:enter_loop(?MODULE, [],
+    #state{socket=Socket, transport=Transport},
+    ?TIMEOUT).
 
 %%--------------------------------------------------------------------
 %% @private
@@ -111,22 +117,12 @@ handle_cast(_Request, State) ->
   {noreply, NewState :: #state{}} |
   {noreply, NewState :: #state{}, timeout() | hibernate} |
   {stop, Reason :: term(), NewState :: #state{}}).
-handle_info({tcp, Socket, Data}, State) ->
- % inet:setopts(Socket, [{active, once}]), % HINT change once to true
-  io:format("tcp info ~p got message ~p~n", [self(), Data]),
-  gen_tcp:send(Socket, Data),
-  inet:setopts(Socket, [{active, true}]),
- % tBNcaller:call(Data,Socket,self()),
-  {noreply, State};
-
-handle_info({send,Socket,{Code,Resp}}, State) ->
-  io:format("~p server want send ~p ~p ~n",[self(),Code,Resp]),
-  BinaryData = iolist_to_binary(fullpow_pb:encode(Resp)),
-  Pack= list_to_binary([Code,BinaryData]),
-  gen_tcp:send(Socket, Pack),
-  inet:setopts(Socket, [{active, 5}]),
-  {noreply, State};
-
+handle_info({tcp, Socket, Data}, State=#state{
+  socket=Socket, transport=Transport}) ->
+  io:format("Data:~p~n", [Data]),
+  Transport:setopts(Socket, [{active, 5}]),
+  Transport:send(Socket, reverse_binary(Data)),
+  {noreply, State, ?TIMEOUT};
 
 handle_info(_Info, State) ->
   {noreply, State}.
@@ -164,3 +160,6 @@ code_change(_OldVsn, State, _Extra) ->
 %%%===================================================================
 %%% Internal functions
 %%%===================================================================
+
+reverse_binary(B) when is_binary(B) ->
+  list_to_binary(lists:reverse(binary_to_list(B))).

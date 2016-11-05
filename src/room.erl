@@ -24,7 +24,7 @@
 	code_change/3]).
 
 -define(SERVER, ?MODULE).
--record(player, {accountId, socket, seat,movement}).
+%-record(player, {accountId, socket, seat,movement}).
 -record(state, {}).
 
 %%%===================================================================

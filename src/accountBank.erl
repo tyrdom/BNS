@@ -110,7 +110,7 @@ handle_call({login,Account,Password,Socket,Spid}, _From, State) ->
               io:format("bank send resp ~n"),
               tcp_server_handler:send(Spid,Socket,CMDCode,Resp)
 	        end;
-    [{Account,OldSocket,OldSpid,PasswordInDB}] ->
+    [[Account,OldSocket,OldSpid,PasswordInDB]] ->
       OldSpid ! {tcp_closed, OldSocket},
       ets:delete(TempBank,Account);
     _Other -> wrong
