@@ -38,7 +38,7 @@
 -spec(start_link() ->
 	{ok, Pid :: pid()} | ignore | {error, Reason :: term()}).
 start_link() ->
-	gen_server:start_link({local, ?SERVER}, ?MODULE, [], []).
+	gen_server:start_link( ?MODULE, [], []).
 
 %%%===================================================================
 %%% gen_server callbacks
@@ -118,15 +118,15 @@ handle_call({outZone,Socket,Spid,_Account}, _From, State) ->
 
 	{reply, ok, State};
 
-handle_call({joinRoom,Socket,Spid,Account,RoomPid}, _From, State) ->
+handle_call({joinRoom,Socket, SPid,Account,RoomPid}, _From, State) ->
 	Rooms = State#state.roomList,
 	case ets:lookup(Rooms,RoomPid) of
-		[] -> error, Spid ! {tcp_closed, Socket};
+		[] -> error, SPid ! {tcp_closed, Socket};
 		[{RoomPid,PlayerNum,Status}] ->
 			case Status of
-					full -> error,Spid ! {tcp_closed, Socket};
+					full -> error, SPid ! {tcp_closed, Socket};
 					unfull ->
-						room:join(RoomPid,Spid,Socket,Account),
+						room:join(RoomPid, SPid,Socket,Account),
 						case PlayerNum  < ?ROOMMAX-1 of
 							false ->ets:insert(Rooms,{RoomPid,?ROOMMAX,full});
 							true -> ets:insert(Rooms,{RoomPid,(PlayerNum+1),unfull})

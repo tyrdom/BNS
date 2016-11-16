@@ -4,15 +4,15 @@
 %%% @doc
 %%%
 %%% @end
-%%% Created : 27. 十月 2016 19:29
+%%% Created : 14. 十一月 2016 9:38
 %%%-------------------------------------------------------------------
--module(sp_tcp_client).
+-module(room_ticker).
 -author("Administrator").
 
 -behaviour(gen_server).
 
 %% API
--export([start_link/1,start/1]).
+-export([start_link/1]).
 
 %% gen_server callbacks
 -export([init/1,
@@ -24,22 +24,22 @@
 
 -define(SERVER, ?MODULE).
 
--record(state, {csocket}).
-
+-record(state, {room_pid}).
+-define(TickTime , 1000).
 %%%===================================================================
 %%% API
 %%%===================================================================
-start(CSocket) -> sp_tcp_cl_sup:start_child(CSocket).
+%room_ticker:start_link(32).
 %%--------------------------------------------------------------------
 %% @doc
 %% Starts the server
 %%
 %% @end
 %%--------------------------------------------------------------------
--spec(start_link(Args::term()) ->
+-spec(start_link(Room_Pid :: term()) ->
   {ok, Pid :: pid()} | ignore | {error, Reason :: term()}).
-start_link(CSocket) ->
-  gen_server:start_link( ?MODULE, [CSocket], []).
+start_link(Room_Pid) ->
+  gen_server:start_link( ?MODULE, [Room_Pid], []).
 
 %%%===================================================================
 %%% gen_server callbacks
@@ -59,11 +59,8 @@ start_link(CSocket) ->
 -spec(init(Args :: term()) ->
   {ok, State :: #state{}} | {ok, State :: #state{}, timeout() | hibernate} |
   {stop, Reason :: term()} | ignore).
-init([CSocket]) ->
-  erlang:process_flag(trap_exit, true),
-  inet:setopts(CSocket,[{active,true}]),
-  io:format("client online"),
-  {ok, #state{csocket = CSocket}}.
+init([RoomPid]) ->
+  {ok, #state{room_pid = RoomPid},?TickTime}.
 
 %%--------------------------------------------------------------------
 %% @private
@@ -111,22 +108,11 @@ handle_cast(_Request, State) ->
   {noreply, NewState :: #state{}} |
   {noreply, NewState :: #state{}, timeout() | hibernate} |
   {stop, Reason :: term(), NewState :: #state{}}).
-handle_info({tcp, Socket, Data}, State) ->
- % inet:setopts(Socket, [{active, once}]), % HINT change once to true
-  io:format("tcp info ~p got message ~p~n", [self(), Data]),
-  gen_tcp:send(Socket, Data),
-  inet:setopts(Socket, [{active, true}]),
- % tBNcaller:call(Data,Socket,self()),
-  {noreply, State};
 
-handle_info({send,Socket,{Code,Resp}}, State) ->
-  io:format("~p server want send ~p ~p ~n",[self(),Code,Resp]),
-  BinaryData = iolist_to_binary(fullpow_pb:encode(Resp)),
-  Pack= list_to_binary([Code,BinaryData]),
-  gen_tcp:send(Socket, Pack),
-  inet:setopts(Socket, [{active, 5}]),
-  {noreply, State};
-
+handle_info(timeout, State) ->
+  RoomPid = State#state.room_pid,
+  room:broadcast(RoomPid),
+  {noreply, State,?TickTime};
 
 handle_info(_Info, State) ->
   {noreply, State}.

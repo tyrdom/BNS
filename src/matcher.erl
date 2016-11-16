@@ -39,7 +39,7 @@
 -spec(start_link() ->
   {ok, Pid :: pid()} | ignore | {error, Reason :: term()}).
 start_link() ->
-  gen_server:start_link({local, ?SERVER}, ?MODULE, [], []).
+  gen_server:start_link( ?MODULE, [], []).
 
 %%%===================================================================
 %%% gen_server callbacks
@@ -79,8 +79,7 @@ init([]) ->
   {stop, Reason :: term(), Reply :: term(), NewState :: #state{}} |
   {stop, Reason :: term(), NewState :: #state{}}).
 
-handle_call(_Request, _From, State) ->
-  {reply, ok, State};
+
 handle_call(_Request, _From, State) ->
   {reply, ok, State}.
 

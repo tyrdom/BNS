@@ -13,7 +13,7 @@
 -behaviour(ranch_protocol).
 
 %% API
--export([start_link/4,init/4]).
+-export([start_link/4,init/4,send/4]).
 
 %% gen_server callbacks
 -export([init/1,
@@ -25,8 +25,9 @@
 
 -define(SERVER, ?MODULE).
 -define(TIMEOUT, 10000).
--record(state, {socket,transport}).
-
+-record(state, {socket,transport,status}).
+%status unknown 未知 access 已经通过验证登录 matching 匹配中 battle 战斗中
+%       login 登录中 create 创建中
 %%%===================================================================
 %%% API
 %%%===================================================================
@@ -40,7 +41,7 @@
 -spec(start_link(Ref::term(),Socket::term(),Transport::term(),Opts::term()) ->
   {ok, Pid :: pid()} | ignore | {error, Reason :: term()}).
 start_link(Ref,Socket,Transport,Opts) ->
-  proc_lib:start_link( ?MODULE,init, [Ref,Socket,Transport,Opts]).
+  proc_lib:start_link( ?MODULE, init, [Ref,Socket,Transport,Opts]).
 
 %%%===================================================================
 %%% gen_server callbacks
@@ -66,9 +67,9 @@ init([]) ->
 init(Ref, Socket, Transport, _Opts = []) ->
   ok = proc_lib:init_ack({ok, self()}),
   ok = ranch:accept_ack(Ref),
-  ok = Transport:setopts(Socket, [{active, 5}, {packet, 4}]),
+  ok = Transport:setopts(Socket, [{active, 10}, {packet, 4}]),
   gen_server:enter_loop(?MODULE, [],
-    #state{socket=Socket, transport=Transport},
+    #state{socket = Socket, transport = Transport},
     ?TIMEOUT).
 
 %%--------------------------------------------------------------------
@@ -100,6 +101,8 @@ handle_call(_Request, _From, State) ->
   {noreply, NewState :: #state{}} |
   {noreply, NewState :: #state{}, timeout() | hibernate} |
   {stop, Reason :: term(), NewState :: #state{}}).
+
+
 handle_cast(_Request, State) ->
   {noreply, State}.
 
@@ -117,15 +120,52 @@ handle_cast(_Request, State) ->
   {noreply, NewState :: #state{}} |
   {noreply, NewState :: #state{}, timeout() | hibernate} |
   {stop, Reason :: term(), NewState :: #state{}}).
-handle_info({tcp, Socket, Data}, State=#state{
-  socket=Socket, transport=Transport}) ->
+handle_info({tcp, Socket, Data}, State=#state{ socket=Socket, transport= _Transport}) ->
   io:format("Data:~p~n", [Data]),
-  Transport:setopts(Socket, [{active, 5}]),
-  Transport:send(Socket, reverse_binary(Data)),
-  {noreply, State, ?TIMEOUT};
+  %Transport:setopts(Socket, [{active, 5}]),
+  OldStatus = State#state.status,
+  Status =  tBN_proto_trans:call(OldStatus,Data,Socket,self()),
+  NewState = State#state{status = Status},
+  {noreply, NewState, ?TIMEOUT};
 
+
+handle_info({send,Socket,{error,Msg}}, State = #state{ socket = Socket, transport = _Transport}) ->
+
+
+  {warning,Pack} = tBN_proto_trans:reply(error,Msg),
+
+  gen_tcp:send(Socket, Pack),
+%%
+  gen_tcp:close(Socket),
+
+  {stop, normal, State};
+
+
+
+handle_info({send,Socket,{OldStatus,Msg}}, State = #state{ socket = Socket, transport = Transport}) ->
+  Transport:setopts(Socket, [{active, 5}]),
+  io:format("~p socket pid want send ~p ~p ~n",[self(), OldStatus,Msg]),
+  NewState =
+    case OldStatus =:= State#state.status of
+    true ->
+    {NewStatus,Pack} = tBN_proto_trans:reply(OldStatus,Msg),
+
+                    gen_tcp:send(Socket, Pack),
+                    State#state{status = NewStatus};
+    false -> io:format("wrong status"),
+                    send(self(),Socket,error,status_error)
+  end,
+  {noreply, NewState, ?TIMEOUT};
+
+
+handle_info({tcp_closed, _Socket}, State) ->
+  {stop, normal, State};
+handle_info({tcp_error, _, Reason}, State) ->
+  {stop, Reason, State};
+handle_info(timeout, State) ->
+  {stop, normal, State};
 handle_info(_Info, State) ->
-  {noreply, State}.
+  {stop, normal, State}.
 
 %%--------------------------------------------------------------------
 %% @private
@@ -161,5 +201,5 @@ code_change(_OldVsn, State, _Extra) ->
 %%% Internal functions
 %%%===================================================================
 
-reverse_binary(B) when is_binary(B) ->
-  list_to_binary(lists:reverse(binary_to_list(B))).
+send(SPid,Socket,OldStatus,Msg)
+  ->SPid!{send,Socket,{OldStatus,Msg}}.

@@ -6,7 +6,7 @@
 %%% @end
 %%% Created : 21. 十月 2016 13:53
 %%%-------------------------------------------------------------------
--module(accountBank).
+-module(account_bank).
 -author("Administrator").
 
 -behaviour(gen_server).
@@ -24,13 +24,20 @@
 	code_change/3]).
 
 -define(SERVER, ?MODULE).
--record(state, {etsTempBank,mysqlPid}).
+-record(state, {accountBank,infoBank,mysqlPid,zonePid}).
 
-
+-record(accountcheckresp,{
+				nickname,
+				gold
+}).
 %%%===================================================================
 %%% API
 %%%===================================================================
+login(Account,Password,Socket,SPid) ->
+	gen_server:call(?SERVER,{login,Account,Password,Socket,SPid}).
 
+create(AccountId,Password,Socket,SPid) ->
+	gen_server:call(?SERVER,{create,AccountId,Password,Socket,SPid}).
 %%--------------------------------------------------------------------
 %% @doc
 %% Starts the server
@@ -40,7 +47,7 @@
 -spec(start_link() ->
 	{ok, Pid :: pid()} | ignore | {error, Reason :: term()}).
 start_link() ->
-	gen_server:start_link({local, ?SERVER}, ?MODULE, [], []).
+	gen_server:start_link(?MODULE, [], []).
 
 %%%===================================================================
 %%% gen_server callbacks
@@ -61,10 +68,12 @@ start_link() ->
 	{ok, State :: #state{}} | {ok, State :: #state{}, timeout() | hibernate} |
 	{stop, Reason :: term()} | ignore).
 init([]) ->
-	TempBank = ets:new(tempBank,[set]),
+	AccountBank = ets:new(accountBank,[set]),
+	InfoBank = ets:new(infoBank,[set]),
 	{ok,MySqlPid} = mysql:start_link([{host, ?MYSQL_IP}, {user, ?MYSQL_ID},
 		{password, ?MYSQL_PS}, {database, ?MYSQL_DB}]),
-	{ok, #state{etsTempBank = TempBank,mysqlPid = MySqlPid}}.
+	{ok,ZonePid} = zone:start_link(),
+	{ok, #state{accountBank = AccountBank,infoBank = InfoBank,mysqlPid = MySqlPid,zonePid = ZonePid}}.
 
 %%--------------------------------------------------------------------
 %% @private
@@ -82,86 +91,6 @@ init([]) ->
 	{stop, Reason :: term(), Reply :: term(), NewState :: #state{}} |
 	{stop, Reason :: term(), NewState :: #state{}}).
 
-handle_call({login,Account,Password,Socket,Spid}, _From, State) ->
-	TempBank = State#state.etsTempBank,
-	Pid = State#state.mysqlPid,
-  PasswordInDB =md5_string(Password),
-
-  Online = ets:lookup(TempBank,Account),
-  case Online of
-    []->
-
-      {ok, _ColumnNames, Rows} =
-      mysql:query(Pid, <<"SELECT account_id FROM account_auth WHERE account_id = ? AND password= ?">>, [Account,PasswordInDB]),
-      io:format("in mysql find ~p ~n",[Rows]),
-
-	    case Rows of
-            [_] -> ets:insert(TempBank,{Account,Socket,Spid,PasswordInDB}),
-									zone:inZone(Account,Socket,Spid),
-			            CMDCode = <<4>>,
-									Resp = {accountloginresp,1},
-              io:format("bank send resp ~n"),
-                  tcp_server_handler:send(Spid,Socket,CMDCode,Resp);
-			        %TODO In startzone
-
-		        []->
-              CMDCode = <<4>>,
-              Resp = {accountloginresp,2},
-              io:format("bank send resp ~n"),
-              tcp_server_handler:send(Spid,Socket,CMDCode,Resp)
-	        end;
-    [[Account,OldSocket,OldSpid,PasswordInDB]] ->
-      OldSpid ! {tcp_closed, OldSocket},
-      ets:delete(TempBank,Account);
-    _Other -> wrong
-  end,
-	{reply, ok, State};
-
-
-handle_call({checkmoney,Socket}, _From, State) ->
-	TempBank = State#state.etsTempBank,
-	ets:lookup(TempBank,Socket),
-	{reply, ok, State};
-
-
-handle_call({checkItem,Socket}, _From, State) ->
-	TempBank = State#state.etsTempBank,
-	ets:lookup(TempBank,Socket),
-	{reply, ok, State};
-
-
-handle_call({updata,Socket,_MoneyData}, _From, State) ->
-	TempBank = State#state.etsTempBank,
-	ets:lookup(TempBank,Socket),
-	%TODO check_account_money
-
-
-	{reply, ok, State};
-
-
-handle_call({create,AccountId,Password,Socket,Spid}, _From, State) ->
-
-	Pid = State#state.mysqlPid,
-	%TODO create account!
-	PasswordInDB =md5_string(Password),
-	{ok, _ColumnNames, Rows} =
-		mysql:query(Pid, <<"SELECT account_id FROM account_auth WHERE account_id = ?">>, [AccountId]),
-
-	case Rows of
-		  [_] ->
-        CMDCode = <<2>>,
-        Resp = {accountcreateresp,2},
-        tcp_server_handler:send(Spid,Socket,CMDCode,Resp);
-
-		  [] ->
-        mysql:query(Pid, "INSERT INTO account_auth (account_id, password) VALUES (?, ?)", [AccountId, PasswordInDB]),
-        CMDCode = <<2>>,
-        Resp = {accountcreateresp,1},
-        tcp_server_handler:send(Spid,Socket,CMDCode,Resp)
-	end,
-	{reply, ok, State};
-
-
 
 handle_call(_Request, _From, State) ->
 	{reply, ok, State}.
@@ -176,6 +105,95 @@ handle_call(_Request, _From, State) ->
 	{noreply, NewState :: #state{}} |
 	{noreply, NewState :: #state{}, timeout() | hibernate} |
 	{stop, Reason :: term(), NewState :: #state{}}).
+
+handle_cast({login,Account,Password,Socket, SPid}, State = #state{accountBank = AcBank, infoBank = InBank}) ->
+
+	Pid = State#state.mysqlPid,
+	PasswordInDBBin =
+		md5_bin_string(Password),
+
+	Online = ets:lookup(AcBank,Account),
+	case Online of
+		[]->
+
+			{ok, _ColumnNames, Rows} =
+				mysql:query(Pid, <<"SELECT account_id ,password FROM account_auth WHERE account_id = ? ">>, [Account]),
+			io:format("in mysql find ~p ~n",[Rows]),
+
+			case Rows of
+				[[_Bin_Ac, PasswordInDBBin]] ->
+
+					ets:insert(AcBank, {Account, Socket, SPid, PasswordInDBBin}),
+					{ok,Account_Info} = get_account_info_in_DB(Account,Pid),
+					ets:insert(InBank,{Socket,Account_Info}),
+			%	TODO	zone:inZone(Account,Socket, SPid),
+%%			            CMDCode = <<4>>,
+%%									Resp = {accountloginresp,1},
+%%              io:format("bank send resp ~n"),
+					ranc_client:send(SPid,Socket,login,ok);
+				%TODO In startzone
+				[[_Bin_Ac,_Other]] ->
+					ranc_client:send(SPid,Socket,login,wrong_ps);
+
+
+				[]->
+%%              CMDCode = <<4>>,
+%%              Resp = {accountloginresp,2},
+					io:format("bank send resp ~n"),
+					ranc_client:send(SPid,Socket,login,not_exist)
+			end;
+		[{Account,OldSocket,OldSPid, PasswordInDBBin }] ->
+			ets:delete(InBank,OldSocket),
+			ranc_client:send(OldSPid,OldSocket,error,other),
+
+			ets:insert(AcBank,{Account,Socket, SPid, PasswordInDBBin}),
+
+			{ok,Account_Info} = get_account_info_in_DB(Account,Pid),
+			ets:insert(InBank,{Socket,Account_Info}),
+
+			ranc_client:send(SPid,Socket,login,other);
+		[{Account,_OSt,_OSP,_RPS}] ->
+			ranc_client:send(SPid,Socket,login,wrong_ps);
+		_Other ->
+			ranc_client:send(SPid,Socket,error,unknown)
+	end,
+	{noreply, State};
+
+
+handle_cast({check,Socket,SPid},  State = #state{infoBank = InBank}) ->
+	[{Socket,#accountcheckresp{nickname = Nickname,gold = Gold}}] = ets:lookup(InBank,Socket),
+	ranc_client:send(SPid,Socket,check,{Nickname,Gold}),
+	{noreply, State};
+
+
+
+
+
+handle_cast({create,AccountId,Password,Socket, SPid}, State) ->
+
+	Pid = State#state.mysqlPid,
+
+	PasswordInDB =md5_string(Password),
+	{ok, _ColumnNames, Rows} =
+		mysql:query(Pid, <<"SELECT account_id FROM account_auth WHERE account_id = ?">>, [AccountId]),
+
+	case Rows of
+		[_] ->
+%%        CMDCode = <<2>>,
+%%        Resp = {accountcreateresp,2},
+			ranc_client:send(SPid,Socket,create,same);
+
+		[] ->
+			ok = mysql:query(Pid, "INSERT INTO account_auth (account_id, password) VALUES (?, ?)", [AccountId, PasswordInDB]),
+%%        CMDCode = <<2>>,
+%%        Resp = {accountcreateresp,1},
+			ranc_client:send(SPid,Socket,create,ok)
+	end,
+	{noreply, State};
+
+handle_cast({quit,Socket, SPid}, State) ->
+	{noreply, State};
+
 handle_cast(_Request, State) ->
 	{noreply, State}.
 
@@ -229,10 +247,11 @@ code_change(_OldVsn, State, _Extra) ->
 %%%===================================================================
 %%% Internal functions
 %%%===================================================================
-
+md5_bin_string(String) ->
+	list_to_binary(md5_string(String)).
 
 md5_string(String) ->
-	list_to_hex(binary_to_list(erlang:md5(String))).
+list_to_hex(binary_to_list(erlang:md5(String))).
 
 list_to_hex(List) -> lists:map(fun(X) ->int_to_hex(X) end ,List).
 
@@ -241,9 +260,10 @@ int_to_hex(X) when X < 256 -> [hex(X div 16),hex(X rem 16)].
 hex(X) -> $C+X.
 
 
-login(Account,Password,Socket,Spid) ->
-		gen_server:call(?SERVER,{login,Account,Password,Socket,Spid}).
 
-create(AccountId,Password,Socket,Spid) ->
-    gen_server:call(?SERVER,{create,AccountId,Password,Socket,Spid}).
+get_account_info_in_DB (Account,Pid) ->
+	{ok, _ColumnNames, Rows} =
+		mysql:query(Pid, <<"SELECT nickname,gold FROM account_info WHERE account_id = ? ">>, [Account]),
+		[[Nickname,Gold]] =Rows,
+		#accountcheckresp{nickname = Nickname,gold = Gold}.
 

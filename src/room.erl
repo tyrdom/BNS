@@ -13,7 +13,7 @@
 
 
 %% API
--export([start_link/0]).
+-export([start_link/0,broadcast/1]).
 
 %% gen_server callbacks
 -export([init/1,
@@ -24,12 +24,24 @@
 	code_change/3]).
 
 -define(SERVER, ?MODULE).
-%-record(player, {accountId, socket, seat,movement}).
--record(state, {}).
+
+-record(state, {move_data,ticker,tick_cycle_count, receive_cycle_count}).
 
 %%%===================================================================
 %%% API
 %%%===================================================================
+a_player_check(RoomPid,SockPid) ->
+	gen_server:cast(RoomPid,{a_player_check,SockPid}).
+
+reboot_ticker(RoomPid) ->
+	room_ticker:start_link(RoomPid).
+
+broadcast(RoomPid) ->
+	gen_server:call(RoomPid,{broadcast}).
+
+ticker_check(RoomPid) ->
+	gen_server:cast(RoomPid,{ticker_check}).
+
 
 %%--------------------------------------------------------------------
 %% @doc
@@ -61,7 +73,10 @@ start_link() ->
 	{ok, State :: #state{}} | {ok, State :: #state{}, timeout() | hibernate} |
 	{stop, Reason :: term()} | ignore).
 init([]) ->
-	{ok, #state{}}.
+	Pid = self(),
+	Ticker = room_ticker:start_link(Pid),
+	Moves =[],
+	{ok, #state{move_data = Moves,ticker = Ticker,tick_cycle_count = 0, receive_cycle_count = 0}}.
 
 %%--------------------------------------------------------------------
 %% @private
@@ -78,6 +93,47 @@ init([]) ->
 	{noreply, NewState :: #state{}, timeout() | hibernate} |
 	{stop, Reason :: term(), Reply :: term(), NewState :: #state{}} |
 	{stop, Reason :: term(), NewState :: #state{}}).
+
+handle_call({broadcast}, _From, State) ->
+	Tick = State#state.tick_cycle_count,
+
+	Raw_Msg = get(),
+	Shorter = fun({Key,{A,_B,_C}})-> {Key,A} end,
+
+	Broadcast_Msg = lists:map(Shorter,Raw_Msg),
+
+	B =
+		fun (ASockMsg,Acc)
+			->
+			{SockPid,{_Movement,_LostTick,_R_times}} = ASockMsg,
+			SockPid ! {Tick, Broadcast_Msg},
+			 a_player_check(self(),SockPid),
+			Acc
+		end,
+
+	lists:foldl(B, ok, Broadcast_Msg),
+
+	NextTick =
+		case Tick < 2000000000 of
+			true -> Tick + 1;
+			false -> 1
+		end,
+
+	NewState = State#state{tick_cycle_count = NextTick},
+
+	{reply, ok, NewState};
+
+
+
+handle_call({join,SockPid}, _From, State) ->
+	put(SockPid,{0,0,0}),
+	Reply = {joined , SockPid},
+	{reply, Reply, State};
+
+handle_call({quit,SockPid}, _From, State) ->
+	erase(SockPid),
+	{reply, {quitted,SockPid}, State};
+
 handle_call(_Request, _From, State) ->
 	{reply, ok, State}.
 
@@ -92,6 +148,60 @@ handle_call(_Request, _From, State) ->
 	{noreply, NewState :: #state{}} |
 	{noreply, NewState :: #state{}, timeout() | hibernate} |
 	{stop, Reason :: term(), NewState :: #state{}}).
+handle_cast({do_movement, SockPid,Movement}, State) ->
+	{_LastMove,_LostTick,R_times} = get(SockPid),
+	put(SockPid,{Movement,0,R_times+1}),
+	OldReceiveCount = State#state.receive_cycle_count,
+	NewReceiveCount =
+		case OldReceiveCount <10000 of
+			true -> OldReceiveCount +1;
+			false ->ok, ticker_check(self()),
+							1
+		end,
+
+
+	NewState =State#state{receive_cycle_count = NewReceiveCount},
+
+	{noreply, NewState};
+
+%%handle_cast({safe_movement,SockPid,Move}, State) ->
+%%	Moves =State#state.move_data,
+%%	NewMoves = lists:keyreplace(SockPid,1,Moves,{SockPid,Move}),
+%%	NewState = State#state{move_data = NewMoves},
+%%	{noreply, NewState};
+
+handle_cast({a_player_check,SockPid}, State) ->
+	{Movement,LostTick,R_times} = get(SockPid),
+	case R_times>3 of
+		true ->SockPid ! {too_much_Action};
+		false -> ok
+	end,
+	case LostTick >5 of
+		true ->
+			put(SockPid,{0, LostTick + 1,0}),
+			case LostTick >100 of
+				true -> SockPid ! {afk};
+				false -> ok
+			end;
+		false -> put(SockPid,{Movement, LostTick + 1,0})
+	end,
+
+	{noreply, State};
+
+
+handle_cast({ticker_check}, State) ->
+	Ticker = State#state.ticker,
+	case erlang:process_info(Ticker) of
+		undefined -> P = self(),
+								reboot_ticker(P);
+		_Other -> ok
+	end,
+	{noreply, State};
+
+handle_cast({fast_quit,SockPid}, State) ->
+	erase(SockPid),
+	{noreply, State};
+
 handle_cast(_Request, State) ->
 	{noreply, State}.
 

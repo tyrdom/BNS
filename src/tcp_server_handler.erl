@@ -58,7 +58,7 @@ handle_info({tcp, Socket, Data}, State) ->
 %	inet:setopts(Socket, [{active, true}]), % HINT change once to true
 	io:format("tcp handler info ~p got message ~p~n", [self(), Data]),
 
-	tBNcaller:call(Data,Socket,self()),
+	tBN_proto_trans:call(Data,Socket,self()),
 	{noreply, State, ?Timeout};
 
 handle_info({send,Socket,{Code,Resp}}, State) ->
@@ -69,7 +69,7 @@ handle_info({send,Socket,{Code,Resp}}, State) ->
  	gen_tcp:send(Socket, Pack),
 	{noreply, State};
 
-handle_info({tcp_closed, _Socket}, #state{addr=Addr} = State) ->
+handle_info({tcp_closed, _Socket}, #state{addr = Addr} = State) ->
 	io:format("tcp handler info ~p client ~p disconnected~n", [self(), Addr]),
 	{stop, normal, State};
 

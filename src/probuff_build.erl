@@ -22,5 +22,5 @@ start() -> %test probuff_build:start().
 %%                                   output_ebin_dir,
 %%                                   imports_dir
 %%--------------------------------------------------------------------
-  B= protobuffs_compile:scan_file(A,[{output_include_dir,OutIncludeDir},{output_ebin_dir,OutBeamDir}]),
+  B = protobuffs_compile:scan_file(A,[{output_include_dir,OutIncludeDir},{output_ebin_dir,OutBeamDir}]),
   io:format("~p~n",[B]).

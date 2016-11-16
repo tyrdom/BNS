@@ -14,7 +14,7 @@
 
 encode() -> %test apps_test:encode().
   Person = #person{age=25, name="John"},
-  iolist_to_binary(test_pb:encode_person(25,"jjj")).
+  iolist_to_binary(test_pb:encode({person,25,<<"jjj">>})).
 
 decode(Data) -> %test apps_test:decode(data).
 
@@ -38,17 +38,17 @@ decode2(Data) -> %test apps_test:dncode2(Data).
 msqtry() -> %apps_test:msqtry().
   {ok, Pid} = mysql:start_link([{host, "192.168.1.243"}, {user, "root"},
     {password, "caiwei"}, {database, "tianhao"}]),
-  PasswordInDB =accountBank:md5_string("dddd"),
+  PasswordInDB = account_bank:md5_string("dddd"),
 
-%%  {ok, _ColumnNames, Rows} =
-%%    mysql:query(Pid, <<"SELECT account_id,password,up_time FROM account_auth WHERE account_id = ? AND password= ?">>, ["cccc",PasswordInDB]),
   {ok, _ColumnNames, Rows} =
-    mysql:query(Pid, <<"SELECT id,globe_in,globe_out FROM cacula_globe WHERE id = ? ">>, [1]),
+    mysql:query(Pid, <<"SELECT account_id,password,up_time FROM account_auth WHERE account_id = ? AND password= ?">>, ["cccc",PasswordInDB]),
+%%  {ok, _ColumnNames, Rows} =
+%%    mysql:query(Pid, <<"SELECT id,globe_in,globe_out FROM cacula_globe WHERE id = ? ">>, [1]),
 
   Rows.
 
 msqinst() -> %apps_test:msqinst().
   {ok, Pid} = mysql:start_link([{host, "192.168.1.243"}, {user, "root"},
     {password, "caiwei"}, {database, "tianhao"}]),
-  PS = accountBank:md5_string("dddd"),
+  PS = account_bank:md5_string("dddd"),
   ok = mysql:query(Pid, "INSERT INTO account_auth (account_id, password) VALUES (?, ?)", ["cccc", PS]).

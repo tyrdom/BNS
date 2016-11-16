@@ -1,31 +1,41 @@
-//1
+//0 服务器报错
+message ErrorResp {
+  repeated int32 reply = 1; //0：未知错误，1：Socket消息状态异常 2 账号异地登录
+}
+
+//1 客户端请求创建账号 此时状态为unknown
 message AccountCreateReq {
   required string accountId = 1;
   required string password = 2;
 }
-//2
+//2 服务端返回创建回复 此时状态为create
 message AccountCreateResp {
-  repeated int32 reply = 1; //0：其他异常 1：正常 2：账号已存在
+  repeated int32 reply = 1;
+  //0：其他异常 状态变为unknown  1：正常 状态变为access 2：账号已存在 状态变为unknown
 }
 
 
-//3
+//3 客户端请求登录 此时状态为unknown
 message AccountLoginReq {
   required string accountId = 1;
   required string password = 2;
 }
-//4
+//4 服务端回复登录 此时状态为login
 message AccountLoginResp {
-  repeated int32 reply = 1; // 0：其他异常 1：正常 2：账号不存在 3：密码错误
+  repeated int32 reply = 1;
+// 0：其他异常 状态变为unknown 1：正常 状态变为access 2：账号不存在 状态变为unknown
+// 3：密码错误 状态变为unknown 4: 换socket登录 状态变为access
 }
 
-//5
-message AccountCheckMoneyReq {
-}
-//6
-message AccountCheckMoneyResp {
-	required string account_id = 1;
-	required string nickname = 2;
-	required int32 money = 3;
+//5 客户端请求查看账户信息 此时状态为 access
+message AccountCheckReq {
 
 }
+
+//6 服务端回复查看账户信息 此时状态为 check
+message AccountCheckResp {
+
+    repeated string nickname = 1;
+    repeated int32 gold = 2;
+}
+
