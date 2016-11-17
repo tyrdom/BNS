@@ -9,7 +9,8 @@
     cowboy,
     erlang_protobuffs,
     mysql_otp,
-    ranch
+    ranch,
+    lager
    ]},
   {env,[]},
   {modules, []},

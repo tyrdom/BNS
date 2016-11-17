@@ -8,9 +8,12 @@
 %%%-------------------------------------------------------------------
 -module(tBN_proto_trans).
 -author("Administrator").
-
+-include("fullpow_pb.hrl").
 %% API
--export([call/4,reply/2]).
+-export([call/3,call/4,call/5,reply/2]).
+
+call(exc_quit,Socket,Pid) ->
+	call(quit,7,exception,Socket,Pid).
 
 call(Status,Data,Socket,Pid) ->
 	<<Number:32,Msg/binary>> = Data,
@@ -34,7 +37,17 @@ call(unknown,1,Msg,Socket,Pid) ->
 call(access,5,Msg,Socket,Pid) ->
 				{accountcheckreq} = fullpow_pb:decode_accountcheckreq(Msg),
 				account_bank:check(Socket,Pid),
- 			check;
+ 				check;
+%%
+%%//7 客户端请求退出账户 此时状态为 任意
+%%message AccountQuitReq {
+%%
+%%}
+call(_Any,7,Msg,Socket,Pid) ->
+
+	account_bank:quit(Socket,Pid,Msg),
+	quit;
+
 
 call(_Other,_Number,_Msg,_Socket,_Pid) ->
 	error.
@@ -93,9 +106,31 @@ reply_bin(login,Msg) ->
 					end,
 
 			{NewS,Code,Bin};
+%%//6 服务端回复查看账户信息 此时状态为 check
+%%message AccountCheckResp {
+%%
+%%repeated string nickname = 1;
+%%repeated int32 gold = 2;
+%%}
 
+reply_bin(check,Msg) ->
+			Code = 6,
+	{Nickname,Gold} =Msg,
+	{Bin,NewS} = {iolist_to_binary(fullpow_pb:encode({#accountcheckmoneyresp{nickname = Nickname,money = Gold}})),access},
+	{NewS,Code,Bin};
 
+%%
+%%//8 服务端回复退出账户 状态更新为 unknown
+%%message AccountQuitResp {
+%%
+%%}
 
+reply_bin(quit,_Msg) ->
+	Code = 8,
+
+	{Bin,NewS} = {
+		unknown},
+	{NewS,Code,Bin};
 
 reply_bin(_Other,Msg) -> error,
 			Code = 0,

@@ -4,16 +4,15 @@
 %%% @doc
 %%%
 %%% @end
-%%% Created : 31. 十月 2016 18:37
+%%% Created : 17. 十一月 2016 20:08
 %%%-------------------------------------------------------------------
--module(ranc_client).
+-module(account_beater).
 -author("Administrator").
 
 -behaviour(gen_server).
--behaviour(ranch_protocol).
 
 %% API
--export([start_link/4,init/4,send/4]).
+-export([start_link/0]).
 
 %% gen_server callbacks
 -export([init/1,
@@ -24,10 +23,9 @@
   code_change/3]).
 
 -define(SERVER, ?MODULE).
--define(TIMEOUT, 10000).
--record(state, {socket,transport,status}).
-%status unknown 未知 access 已经通过验证登录 matching 匹配中 battle 战斗中
-%       login 登录中 create 创建中
+
+-record(state, {}).
+
 %%%===================================================================
 %%% API
 %%%===================================================================
@@ -38,10 +36,10 @@
 %%
 %% @end
 %%--------------------------------------------------------------------
--spec(start_link(Ref::term(),Socket::term(),Transport::term(),Opts::term()) ->
+-spec(start_link() ->
   {ok, Pid :: pid()} | ignore | {error, Reason :: term()}).
-start_link(Ref,Socket,Transport,Opts) ->
-  proc_lib:start_link( ?MODULE, init, [Ref,Socket,Transport,Opts]).
+start_link() ->
+  gen_server:start_link({local, ?SERVER}, ?MODULE, [], []).
 
 %%%===================================================================
 %%% gen_server callbacks
@@ -62,15 +60,7 @@ start_link(Ref,Socket,Transport,Opts) ->
   {ok, State :: #state{}} | {ok, State :: #state{}, timeout() | hibernate} |
   {stop, Reason :: term()} | ignore).
 init([]) ->
-  {ok, undefined}.
-
-init(Ref, Socket, Transport, _Opts = []) ->
-  ok = proc_lib:init_ack({ok, self()}),
-  ok = ranch:accept_ack(Ref),
-  ok = Transport:setopts(Socket, [{active, 10}, {packet, 4}]),
-  gen_server:enter_loop(?MODULE, [],
-    #state{socket = Socket, transport = Transport},
-    ?TIMEOUT).
+  {ok, #state{}}.
 
 %%--------------------------------------------------------------------
 %% @private
@@ -101,8 +91,6 @@ handle_call(_Request, _From, State) ->
   {noreply, NewState :: #state{}} |
   {noreply, NewState :: #state{}, timeout() | hibernate} |
   {stop, Reason :: term(), NewState :: #state{}}).
-
-
 handle_cast(_Request, State) ->
   {noreply, State}.
 
@@ -120,73 +108,8 @@ handle_cast(_Request, State) ->
   {noreply, NewState :: #state{}} |
   {noreply, NewState :: #state{}, timeout() | hibernate} |
   {stop, Reason :: term(), NewState :: #state{}}).
-handle_info({tcp, Socket, Data}, State=#state{ socket=Socket, transport= _Transport}) ->
-  io:format("Data:~p~n", [Data]),
-  %Transport:setopts(Socket, [{active, 5}]),
-  OldStatus = State#state.status,
-  Status =  tBN_proto_trans:call(OldStatus,Data,Socket,self()),
-  NewState = State#state{status = Status},
-  {noreply, NewState, ?TIMEOUT};
-
-
-handle_info({send,Socket,{error,Msg}}, State = #state{ socket = Socket, transport = _Transport}) ->
-
-
-  {warning,Pack} = tBN_proto_trans:reply(error,Msg),
-
-  gen_tcp:send(Socket, Pack),
-
-
-
-  {stop, normal, State,?TIMEOUT};
-
-
-
-handle_info({spceial_send,Socket,{OldStatus,Msg}}, State = #state{ socket = Socket, transport = Transport}) ->
-  Transport:setopts(Socket, [{active, 5}]),
-  io:format("~p socket pid want send ~p ~p ~n",[self(), OldStatus,Msg]),
-
-
-        {NewStatus,Pack} = tBN_proto_trans:reply(OldStatus,Msg),
-
-        gen_tcp:send(Socket, Pack),
-        NewState = State#state{status = NewStatus},
-
-  {noreply, NewState, ?TIMEOUT};
-
-
-handle_info({send,Socket,{OldStatus,Msg}}, State = #state{ socket = Socket, transport = Transport}) ->
-  Transport:setopts(Socket, [{active, 5}]),
-  io:format("~p socket pid want send ~p ~p ~n",[self(), OldStatus,Msg]),
-  NewState =
-    case OldStatus =:= State#state.status of
-    true ->
-    {NewStatus,Pack} = tBN_proto_trans:reply(OldStatus,Msg),
-
-                    gen_tcp:send(Socket, Pack),
-                    State#state{status = NewStatus};
-    false -> io:format("wrong status"),
-                    send(self(),Socket,error,status_error)
-  end,
-  {noreply, NewState, ?TIMEOUT};
-
-
-handle_info({tcp_closed, Socket}, State = #state{socket = Socket}) ->
-
-  tBN_proto_trans:call(exc_quit,Socket,self()),
-
-  {stop, normal, State};
-handle_info({tcp_error, _, Reason}, State = #state{socket = Socket}) ->
-  tBN_proto_trans:call(exc_quit,Socket,self()),
-  {stop, Reason, State};
-
-handle_info(timeout, State = #state{socket = Socket}) ->
-  gen_tcp:close(Socket),
-  {stop, normal, State};
-
-handle_info(_Info, State = #state{socket = Socket}) ->
-  tBN_proto_trans:call(exc_quit,Socket,self()),
-  {stop, normal, State}.
+handle_info(_Info, State) ->
+  {noreply, State}.
 
 %%--------------------------------------------------------------------
 %% @private
@@ -221,6 +144,3 @@ code_change(_OldVsn, State, _Extra) ->
 %%%===================================================================
 %%% Internal functions
 %%%===================================================================
-
-send(SPid,Socket,OldStatus,Msg)
-  ->SPid!{send,Socket,{OldStatus,Msg}}.
