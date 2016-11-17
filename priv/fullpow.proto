@@ -11,7 +11,7 @@ message AccountCreateReq {
 //2 服务端返回创建回复 此时状态为create
 message AccountCreateResp {
   repeated int32 reply = 1;
-  //0：其他异常 状态变为unknown  1：正常 状态变为access 2：账号已存在 状态变为unknown
+  //0：其他异常 状态变为unknown  1：正常 状态变为unknown 2：账号已存在 状态变为unknown
 }
 
 

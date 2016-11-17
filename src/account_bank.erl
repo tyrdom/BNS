@@ -26,10 +26,13 @@
 -define(SERVER, ?MODULE).
 -record(state, {accountBank,infoBank,mysqlPid,zonePid}).
 
--record(accountcheckresp,{
-				nickname,
-				gold
+-record(accountlogin, { socket ,sPid , password_in_db
 }).
+-record(accountcheck,{
+	account_id,
+	nickname,
+	gold
+	}).
 %%%===================================================================
 %%% API
 %%%===================================================================
@@ -72,6 +75,7 @@ init([]) ->
 	InfoBank = ets:new(infoBank,[set]),
 	{ok,MySqlPid} = mysql:start_link([{host, ?MYSQL_IP}, {user, ?MYSQL_ID},
 		{password, ?MYSQL_PS}, {database, ?MYSQL_DB}]),
+	link(MySqlPid),
 	{ok,ZonePid} = zone:start_link(),
 	{ok, #state{accountBank = AccountBank,infoBank = InfoBank,mysqlPid = MySqlPid,zonePid = ZonePid}}.
 
@@ -111,7 +115,7 @@ handle_cast({login,Account,Password,Socket, SPid}, State = #state{accountBank = 
 	Pid = State#state.mysqlPid,
 	PasswordInDBBin =
 		md5_bin_string(Password),
-
+	AccountLogin =#accountlogin{socket = Socket,sPid =  SPid,password_in_db =  PasswordInDBBin},
 	Online = ets:lookup(AcBank,Account),
 	case Online of
 		[]->
@@ -123,7 +127,7 @@ handle_cast({login,Account,Password,Socket, SPid}, State = #state{accountBank = 
 			case Rows of
 				[[_Bin_Ac, PasswordInDBBin]] ->
 
-					ets:insert(AcBank, {Account, Socket, SPid, PasswordInDBBin}),
+					ets:insert(AcBank, {Account, AccountLogin}),
 					{ok,Account_Info} = get_account_info_in_DB(Account,Pid),
 					ets:insert(InBank,{Socket,Account_Info}),
 			%	TODO	zone:inZone(Account,Socket, SPid),
@@ -142,31 +146,29 @@ handle_cast({login,Account,Password,Socket, SPid}, State = #state{accountBank = 
 					io:format("bank send resp ~n"),
 					ranc_client:send(SPid,Socket,login,not_exist)
 			end;
-		[{Account,OldSocket,OldSPid, PasswordInDBBin }] ->
+		[{Account, #accountlogin{socket = OldSocket,sPid =  OldSPid,password_in_db =  PasswordInDBBin}}] ->
 			ets:delete(InBank,OldSocket),
-			ranc_client:send(OldSPid,OldSocket,error,other),
 
-			ets:insert(AcBank,{Account,Socket, SPid, PasswordInDBBin}),
+			ranc_client:send(OldSPid, OldSocket, error, other),
+
+			ets:insert(AcBank,{Account,AccountLogin}),
 
 			{ok,Account_Info} = get_account_info_in_DB(Account,Pid),
+
 			ets:insert(InBank,{Socket,Account_Info}),
 
 			ranc_client:send(SPid,Socket,login,other);
-		[{Account,_OSt,_OSP,_RPS}] ->
+		[{Account,_Other}] ->
 			ranc_client:send(SPid,Socket,login,wrong_ps);
 		_Other ->
 			ranc_client:send(SPid,Socket,error,unknown)
 	end,
 	{noreply, State};
 
-
 handle_cast({check,Socket,SPid},  State = #state{infoBank = InBank}) ->
-	[{Socket,#accountcheckresp{nickname = Nickname,gold = Gold}}] = ets:lookup(InBank,Socket),
+	[{Socket,#accountcheck{nickname = Nickname,gold = Gold}}] = ets:lookup(InBank,Socket),
 	ranc_client:send(SPid,Socket,check,{Nickname,Gold}),
 	{noreply, State};
-
-
-
 
 
 handle_cast({create,AccountId,Password,Socket, SPid}, State) ->
@@ -179,19 +181,27 @@ handle_cast({create,AccountId,Password,Socket, SPid}, State) ->
 
 	case Rows of
 		[_] ->
-%%        CMDCode = <<2>>,
-%%        Resp = {accountcreateresp,2},
+
 			ranc_client:send(SPid,Socket,create,same);
 
 		[] ->
 			ok = mysql:query(Pid, "INSERT INTO account_auth (account_id, password) VALUES (?, ?)", [AccountId, PasswordInDB]),
-%%        CMDCode = <<2>>,
-%%        Resp = {accountcreateresp,1},
+			ok = mysql:query(Pid, "INSERT INTO account_info (account_id, gold) VALUES (?, ?)", [AccountId, 0]),
+
 			ranc_client:send(SPid,Socket,create,ok)
 	end,
 	{noreply, State};
 
-handle_cast({quit,Socket, SPid}, State) ->
+handle_cast({quit,Socket, SPid}, State = #state{infoBank = IFBank ,accountBank = ACBank}) ->
+		case ets:lookup(IFBank,Socket) of
+			[{Socket,#accountcheck{account_id = AccountId}}] -> ets:delete(ACBank,AccountId);
+			[] ->
+				AcList =	ets:match(ACBank , {'$1',#accountlogin{socket = Socket,sPid = '_',password_in_db = '_'}}),
+				F = fun([Account]) -> ets:delete(ACBank,Account) end,
+				lists:map(F,AcList)
+		end,
+		ets:delete(IFBank,Socket),
+		ranc_client:send(SPid,Socket,quit,ok),
 	{noreply, State};
 
 handle_cast(_Request, State) ->
@@ -264,6 +274,13 @@ hex(X) -> $C+X.
 get_account_info_in_DB (Account,Pid) ->
 	{ok, _ColumnNames, Rows} =
 		mysql:query(Pid, <<"SELECT nickname,gold FROM account_info WHERE account_id = ? ">>, [Account]),
-		[[Nickname,Gold]] =Rows,
-		#accountcheckresp{nickname = Nickname,gold = Gold}.
+	case Rows of
+
+		[[Nickname,Gold]] ->
+		#accountcheck{account_id = Account, nickname = Nickname,gold = Gold};
+		_Other ->
+			ok = mysql:query(Pid, "INSERT INTO account_info (account_id, gold) VALUES (?, ?)", [Account, 0]),
+
+			#accountcheck{account_id = Account, nickname = <<"nick">> ,gold = 0}
+	end.
 

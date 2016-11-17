@@ -62,7 +62,7 @@ reply_bin(create,Msg) ->
 				{Bin,NewS} =
 					case Msg of
 						ok -> { iolist_to_binary(fullpow_pb:encode({accountcreateresp,1})),
-								access};
+								unknown};
 						same -> { iolist_to_binary(fullpow_pb:encode({accountcreateresp,2})),
 								unknown};
 						_Other ->{iolist_to_binary(fullpow_pb:encode({accountcreateresp,0})),
