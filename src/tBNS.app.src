@@ -10,7 +10,7 @@
     erlang_protobuffs,
     mysql_otp,
     ranch,
-    lager
+    gen_logger
    ]},
   {env,[]},
   {modules, []},

@@ -6,7 +6,7 @@
 %%% @end
 %%% Created : 22. 十月 2016 17:33
 %%%-------------------------------------------------------------------
--module(tBN_proto_trans).
+-module(proto_trans).
 -author("Administrator").
 -include("fullpow_pb.hrl").
 %% API
@@ -64,9 +64,21 @@ call(_Other,_Number,_Msg,_Socket,_Pid) ->
 %%repeated int32 reply = 1; //0：其他异常 1：正常 2：账号已存在
 %%}
 
-reply(Status,Msg) ->
-	{NewS,Code,Bin} = reply_bin(Status,Msg),
+reply(StatusOrType,Msg) ->
+	{NewS,Code,Bin} = reply_bin(StatusOrType,Msg),
 	{NewS,<<Code:32,Bin/binary>>}.
+
+%%
+%%//10 服务器发送的心跳信息，保持socket连接不超时
+%%message BeatResp {
+%%repeated int32  = 1;
+%%}
+
+reply_bin(beat,Msg) ->
+  Code = 10,
+  {Bin,NewS} = {iolist_to_binary(fullpow_pb:encode({beatresp,Msg})),
+                keep},
+  {NewS,Code,Bin};
 
 reply_bin(create,Msg) ->
 

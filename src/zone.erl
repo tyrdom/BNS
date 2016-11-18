@@ -13,7 +13,7 @@
 
 %% API
 -export([start_link/0,inZone/3]).
-
+-include("account_base_config.hrl").
 %% gen_server callbacks
 -export([init/1,
 	handle_call/3,
@@ -59,9 +59,10 @@ start_link() ->
 	{ok, State :: #state{}} | {ok, State :: #state{}, timeout() | hibernate} |
 	{stop, Reason :: term()} | ignore).
 init([]) ->
-	PlayerList =ets:new(playerList,[set]),
+	BankState = account_bank:get_state(),
+
 	RoomList = ets:new(roomList,[set]),
-	{ok, #state{playerList = PlayerList,roomList = RoomList}}.
+	{ok, #state{roomList = RoomList}}.
 
 %%--------------------------------------------------------------------
 %% @private

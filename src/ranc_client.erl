@@ -120,11 +120,12 @@ handle_cast(_Request, State) ->
   {noreply, NewState :: #state{}} |
   {noreply, NewState :: #state{}, timeout() | hibernate} |
   {stop, Reason :: term(), NewState :: #state{}}).
+
 handle_info({tcp, Socket, Data}, State=#state{ socket=Socket, transport= _Transport}) ->
   io:format("Data:~p~n", [Data]),
-  %Transport:setopts(Socket, [{active, 5}]),
+  % Transport:setopts(Socket, [{active, 5}]),
   OldStatus = State#state.status,
-  Status =  tBN_proto_trans:call(OldStatus,Data,Socket,self()),
+  Status =  proto_trans:call(OldStatus,Data,Socket,self()),
   NewState = State#state{status = Status},
   {noreply, NewState, ?TIMEOUT};
 
@@ -132,7 +133,7 @@ handle_info({tcp, Socket, Data}, State=#state{ socket=Socket, transport= _Transp
 handle_info({send,Socket,{error,Msg}}, State = #state{ socket = Socket, transport = _Transport}) ->
 
 
-  {warning,Pack} = tBN_proto_trans:reply(error,Msg),
+  {warning,Pack} = proto_trans:reply(error,Msg),
 
   gen_tcp:send(Socket, Pack),
 
@@ -142,12 +143,12 @@ handle_info({send,Socket,{error,Msg}}, State = #state{ socket = Socket, transpor
 
 
 
-handle_info({spceial_send,Socket,{OldStatus,Msg}}, State = #state{ socket = Socket, transport = Transport}) ->
+handle_info({beat_send,Socket,{beat,Msg}}, State = #state{ socket = Socket, transport = Transport}) ->
   Transport:setopts(Socket, [{active, 5}]),
-  io:format("~p socket pid want send ~p ~p ~n",[self(), OldStatus,Msg]),
+  io:format("~p socket pid want send ~p ~p ~n",[self(), beat,Msg]),
 
 
-        {NewStatus,Pack} = tBN_proto_trans:reply(OldStatus,Msg),
+        {NewStatus,Pack} = proto_trans:reply(beat,Msg),
 
         gen_tcp:send(Socket, Pack),
         NewState = State#state{status = NewStatus},
@@ -161,23 +162,25 @@ handle_info({send,Socket,{OldStatus,Msg}}, State = #state{ socket = Socket, tran
   NewState =
     case OldStatus =:= State#state.status of
     true ->
-    {NewStatus,Pack} = tBN_proto_trans:reply(OldStatus,Msg),
+    {NewStatus,Pack} = proto_trans:reply(OldStatus,Msg),
 
                     gen_tcp:send(Socket, Pack),
                     State#state{status = NewStatus};
     false -> io:format("wrong status"),
-                    send(self(),Socket,error,status_error)
+                    send(error,self(),Socket,status_error),
+                    State#state{status = warning}
   end,
   {noreply, NewState, ?TIMEOUT};
 
 
 handle_info({tcp_closed, Socket}, State = #state{socket = Socket}) ->
 
-  tBN_proto_trans:call(exc_quit,Socket,self()),
+  proto_trans:call(exc_quit,Socket,self()),
 
   {stop, normal, State};
 handle_info({tcp_error, _, Reason}, State = #state{socket = Socket}) ->
-  tBN_proto_trans:call(exc_quit,Socket,self()),
+  proto_trans:call(exc_quit,Socket,self()),
+
   {stop, Reason, State};
 
 handle_info(timeout, State = #state{socket = Socket}) ->
@@ -185,7 +188,7 @@ handle_info(timeout, State = #state{socket = Socket}) ->
   {stop, normal, State};
 
 handle_info(_Info, State = #state{socket = Socket}) ->
-  tBN_proto_trans:call(exc_quit,Socket,self()),
+  proto_trans:call(exc_quit,Socket,self()),
   {stop, normal, State}.
 
 %%--------------------------------------------------------------------
@@ -221,6 +224,8 @@ code_change(_OldVsn, State, _Extra) ->
 %%%===================================================================
 %%% Internal functions
 %%%===================================================================
+send(beat,SPid,Socket,Msg)
+->SPid!{beat_send,Socket,{beat,Msg}};
 
-send(SPid,Socket,OldStatus,Msg)
-  ->SPid!{send,Socket,{OldStatus,Msg}}.
+send(StatusOrType,SPid,Socket,Msg)
+  ->SPid!{send,Socket,{StatusOrType,Msg}}.

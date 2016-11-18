@@ -6,7 +6,7 @@
 %%% @end
 %%% Created : 21. 十月 2016 12:00
 %%%-------------------------------------------------------------------
--module(tBN_sup).
+-module(tBNS_sup).
 -author("Administrator").
 
 -behaviour(supervisor).

@@ -12,8 +12,8 @@
 -behaviour(gen_server).
 
 %% API
--export([start_link/0]).
-
+-export([start_link/1]).
+-include("account_base_config.hrl").
 %% gen_server callbacks
 -export([init/1,
   handle_call/3,
@@ -23,8 +23,8 @@
   code_change/3]).
 
 -define(SERVER, ?MODULE).
-
--record(state, {}).
+-define(BEATTIME,5000).
+-record(state, {socket_account_table,beat}).
 
 %%%===================================================================
 %%% API
@@ -36,10 +36,10 @@
 %%
 %% @end
 %%--------------------------------------------------------------------
--spec(start_link() ->
+-spec(start_link(SAT::term()) ->
   {ok, Pid :: pid()} | ignore | {error, Reason :: term()}).
-start_link() ->
-  gen_server:start_link({local, ?SERVER}, ?MODULE, [], []).
+start_link(SAT) ->
+  gen_server:start_link(?MODULE, [SAT], []).
 
 %%%===================================================================
 %%% gen_server callbacks
@@ -59,8 +59,9 @@ start_link() ->
 -spec(init(Args :: term()) ->
   {ok, State :: #state{}} | {ok, State :: #state{}, timeout() | hibernate} |
   {stop, Reason :: term()} | ignore).
-init([]) ->
-  {ok, #state{}}.
+init([SAT]) ->
+
+  {ok, #state{socket_account_table = SAT,beat = 1}}.
 
 %%--------------------------------------------------------------------
 %% @private
@@ -108,6 +109,25 @@ handle_cast(_Request, State) ->
   {noreply, NewState :: #state{}} |
   {noreply, NewState :: #state{}, timeout() | hibernate} |
   {stop, Reason :: term(), NewState :: #state{}}).
+handle_info(timeout,State = #state{socket_account_table = SAT,beat = Beat}) ->
+  Fun =
+    fun(SAM,ok) ->
+      {Socket,#socket_info{socket_pid = SPid,special_status = Status}} = SAM,
+      case Status of
+        battle -> not_send;
+        _Other -> ranc_client:send(beat,SPid,Socket,Beat),ok
+      end
+    end,
+
+  ets:foldl(Fun,ok,SAT),
+  NewBeat =
+    case Beat >10000 of
+      true -> 1;
+    false -> Beat +1
+    end,
+  NewState = State#state{beat = NewBeat},
+  {noreply, NewState};
+
 handle_info(_Info, State) ->
   {noreply, State}.
 

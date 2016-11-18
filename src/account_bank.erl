@@ -13,7 +13,7 @@
 
 -include("net_settings.hrl").
 %% API
--export([start_link/0,md5_string/1,login/4,create/4]).
+-export([start_link/0,md5_string/1,login/4,create/4,check/2,quit/3]).
 
 %% gen_server callbacks
 -export([init/1,
@@ -24,21 +24,16 @@
 	code_change/3]).
 
 -define(SERVER, ?MODULE).
--record(state, {accountBank, socket_account_table,mysqlPid,zonePid}).
--record(account_info,{account_login,account_check}).
 
--record(account_login, {
-	socket ,
-	sPid ,
-	password_in_db
-}).
--record(account_check,{
-	nickname,
-	gold
-	}).
+-include("account_base_config.hrl").
 %%%===================================================================
 %%% API
 %%%===================================================================
+quit(Socket, SPid, Type) ->
+	gen_server:call(?SERVER,{quit,Socket, SPid, Type}).
+
+check(Socket,SPid) ->
+	gen_server:call(?SERVER,{check,Socket,SPid}).
 
 login(Account,Password,Socket,SPid) ->
 	gen_server:call(?SERVER,{login,Account,Password,Socket,SPid}).
@@ -72,16 +67,16 @@ start_link() ->
 %% @end
 %%--------------------------------------------------------------------
 -spec(init(Args :: term()) ->
-	{ok, State :: #state{}} | {ok, State :: #state{}, timeout() | hibernate} |
+	{ok, State :: #bank_state{}} | {ok, State :: #bank_state{}, timeout() | hibernate} |
 	{stop, Reason :: term()} | ignore).
 init([]) ->
 	AccountBank = ets:new(accountBank,[set]),
-	Socket_Account_Table = ets:new(sock_account,[set]),
+	Socket_Account_Table = ets:new(sock_account,[set]),%%TODO 多进程读写
 	{ok,MySqlPid} = mysql:start_link([{host, ?MYSQL_IP}, {user, ?MYSQL_ID},
 		{password, ?MYSQL_PS}, {database, ?MYSQL_DB}]),
 	link(MySqlPid),
 	{ok,ZonePid} = zone:start_link(),
-	{ok, #state{accountBank = AccountBank, socket_account_table = Socket_Account_Table,mysqlPid = MySqlPid,zonePid = ZonePid}}.
+	{ok, #bank_state{accountBank = AccountBank, socket_account_table = Socket_Account_Table,mysqlPid = MySqlPid,zonePid = ZonePid}}.
 
 %%--------------------------------------------------------------------
 %% @private
@@ -91,14 +86,18 @@ init([]) ->
 %% @end
 %%--------------------------------------------------------------------
 -spec(handle_call(Request :: term(), From :: {pid(), Tag :: term()},
-		State :: #state{}) ->
-	{reply, Reply :: term(), NewState :: #state{}} |
-	{reply, Reply :: term(), NewState :: #state{}, timeout() | hibernate} |
-	{noreply, NewState :: #state{}} |
-	{noreply, NewState :: #state{}, timeout() | hibernate} |
-	{stop, Reason :: term(), Reply :: term(), NewState :: #state{}} |
-	{stop, Reason :: term(), NewState :: #state{}}).
+		State :: #bank_state{}) ->
+	{reply, Reply :: term(), NewState :: #bank_state{}} |
+	{reply, Reply :: term(), NewState :: #bank_state{}, timeout() | hibernate} |
+	{noreply, NewState :: #bank_state{}} |
+	{noreply, NewState :: #bank_state{}, timeout() | hibernate} |
+	{stop, Reason :: term(), Reply :: term(), NewState :: #bank_state{}} |
+	{stop, Reason :: term(), NewState :: #bank_state{}}).
+handle_call({get_state},_From, State) ->
 
+	Reply = State,
+
+	{reply, Reply, State};
 
 handle_call(_Request, _From, State) ->
 	{reply, ok, State}.
@@ -109,17 +108,17 @@ handle_call(_Request, _From, State) ->
 %%
 %% @end
 %%--------------------------------------------------------------------
--spec(handle_cast(Request :: term(), State :: #state{}) ->
-	{noreply, NewState :: #state{}} |
-	{noreply, NewState :: #state{}, timeout() | hibernate} |
-	{stop, Reason :: term(), NewState :: #state{}}).
+-spec(handle_cast(Request :: term(), State :: #bank_state{}) ->
+	{noreply, NewState :: #bank_state{}} |
+	{noreply, NewState :: #bank_state{}, timeout() | hibernate} |
+	{stop, Reason :: term(), NewState :: #bank_state{}}).
 
-handle_cast({login,Account,Password,Socket, SPid}, State = #state{accountBank = AcBank, socket_account_table = Sock_Ac_Table}) ->
+handle_cast({login,Account,Password,Socket, SPid}, State = #bank_state{accountBank = AcBank, socket_account_table = Sock_Ac_Table}) ->
 
-	Pid = State#state.mysqlPid,
+	Pid = State#bank_state.mysqlPid,
 	PasswordInDBBin =
 		md5_bin_string(Password),
-	AccountLogin =#account_login{socket = Socket,sPid =  SPid,password_in_db =  PasswordInDBBin},
+	AccountLogin =#account_login{socket = Socket, sPid = SPid, password_in_db =  PasswordInDBBin},
 	Online = ets:lookup(AcBank,Account),
 	case Online of
 		[]->
@@ -132,51 +131,50 @@ handle_cast({login,Account,Password,Socket, SPid}, State = #state{accountBank = 
 				[[_Bin_Ac, PasswordInDBBin]] ->
 
 
-					{ok,Account_Info} = get_account_info_in_DB(Account,Pid),
-					ets:insert(AcBank, {Account,#account_info{account_login =  AccountLogin,account_check = Account_Info}}),
-					ets:insert(Sock_Ac_Table, {Socket,Account}),
-			%	TODO	zone:inZone(Account,Socket, SPid),
+					{ok,Account_Check} = get_account_check_in_DB(Account,Pid),
+					ets:insert(AcBank, {Account,#account_info{account_login =  AccountLogin,account_check = Account_Check}}),
+					ets:insert(Sock_Ac_Table, {Socket,#socket_info{account_id = Account,socket_pid = SPid}}),
+				  %	TODO	zone:inZone(Account,Socket, SPid),
 
-					ranc_client:send(SPid,Socket,login,ok);
-				%TODO In startzone
+					ranc_client:send(login,SPid,Socket,ok);
+				  % TODO In startzone
 				[[_Bin_Ac,_Other]] ->
-					ranc_client:send(SPid,Socket,login,wrong_ps);
+					ranc_client:send(login,SPid,Socket,wrong_ps);
 
 
 				[]->
 
 					io:format("bank send resp ~n"),
-					ranc_client:send(SPid,Socket,login,not_exist)
+					ranc_client:send(login,SPid,Socket,not_exist)
 			end;
 		[{Account, #account_login{socket = OldSocket,sPid =  OldSPid,password_in_db =  PasswordInDBBin}}] ->
 			ets:delete(Sock_Ac_Table,OldSocket),
 
-			ranc_client:send(OldSPid, OldSocket, error, other),
+			ranc_client:send(error,OldSPid, OldSocket,  other),
 
-			ets:insert(AcBank,{Account,AccountLogin}),
+			{ok,Account_Check} = get_account_check_in_DB(Account,Pid),
 
-			{ok,Account_Info} = get_account_info_in_DB(Account,Pid),
+			ets:insert(AcBank, {Account,#account_info{account_login =  AccountLogin,account_check = Account_Check}}),
+			ets:insert(Sock_Ac_Table, {Socket,#socket_info{account_id = Account,socket_pid = SPid}}),
 
-			ets:insert(Sock_Ac_Table,{Socket,Account_Info}),
-
-			ranc_client:send(SPid,Socket,login,other);
+			ranc_client:send(login,SPid,Socket,other);
 		[{Account,_Other}] ->
-			ranc_client:send(SPid,Socket,login,wrong_ps);
+			ranc_client:send(login,SPid,Socket,wrong_ps);
 		_Other ->
-			ranc_client:send(SPid,Socket,error,unknown)
+			ranc_client:send(error,SPid,Socket,unknown)
 	end,
 	{noreply, State};
 
-handle_cast({check,Socket,SPid},  State = #state{socket_account_table = SAT,accountBank = ACB}) ->
+handle_cast({check,Socket,SPid},  State = #bank_state{socket_account_table = SAT,accountBank = ACB}) ->
 	[{Socket,Account}]= ets:lookup(SAT,Socket),
 	[{Account,#account_info{account_check = #account_check{nickname = Nickname,gold = Gold}}}] = ets:lookup(ACB,Account),
-	ranc_client:send(SPid,Socket,check,{Nickname,Gold}),
+	ranc_client:send(check,SPid,Socket,{Nickname,Gold}),
 	{noreply, State};
 
-
+%创建账号
 handle_cast({create,AccountId,Password,Socket, SPid}, State) ->
 
-	Pid = State#state.mysqlPid,
+	Pid = State#bank_state.mysqlPid,
 
 	PasswordInDB =md5_string(Password),
 	{ok, _ColumnNames, Rows} =
@@ -185,33 +183,34 @@ handle_cast({create,AccountId,Password,Socket, SPid}, State) ->
 	case Rows of
 		[_] ->
 
-			ranc_client:send(SPid,Socket,create,same);
+			ranc_client:send(create,SPid,Socket,same);
 
 		[] ->
 			ok = mysql:query(Pid, "INSERT INTO account_auth (account_id, password) VALUES (?, ?)", [AccountId, PasswordInDB]),
 			ok = mysql:query(Pid, "INSERT INTO account_info (account_id, gold) VALUES (?, ?)", [AccountId, 0]),
 
-			ranc_client:send(SPid,Socket,create,ok)
+			ranc_client:send(create,SPid,Socket,ok)
 	end,
 	{noreply, State};
 
-handle_cast({quit,Socket, SPid, Type}, State = #state{socket_account_table = IFBank ,accountBank = ACBank}) ->
-		case ets:lookup(IFBank,Socket) of
-			[{Socket,#account_check{account_id = AccountId}}] -> ets:delete(ACBank,AccountId);
+handle_cast({quit,Socket, SPid, Type}, State = #bank_state{socket_account_table = SAT,accountBank = ACBank}) ->
+		case ets:lookup(SAT,Socket) of
+			[{Socket,AccountId}] -> ets:delete(ACBank,AccountId);
 			[] ->
-				AcList =	ets:match(ACBank , {'$1',#account_login{socket = Socket,sPid = '_',password_in_db = '_'}}),
+				AcList =	ets:match(ACBank , {'$1',#account_info{
+					account_login = #account_login{socket = Socket,
+					sPid = '_',password_in_db = '_'},
+					account_check = '_'}}),
 				F = fun([Account]) -> ets:delete(ACBank,Account) end,
 				lists:map(F,AcList)
 		end,
-		ets:delete(IFBank,Socket),
+		ets:delete(SAT,Socket),
 
 		case Type of
 			exception -> ok;
 			_ ->
-					ranc_client:send(SPid,Socket,quit,ok)
-
+					ranc_client:send(quit,SPid,Socket,ok)
 		end,
-
 	{noreply, State};
 
 handle_cast(_Request, State) ->
@@ -227,10 +226,10 @@ handle_cast(_Request, State) ->
 %%                                   {stop, Reason, State}
 %% @end
 %%--------------------------------------------------------------------
--spec(handle_info(Info :: timeout() | term(), State :: #state{}) ->
-	{noreply, NewState :: #state{}} |
-	{noreply, NewState :: #state{}, timeout() | hibernate} |
-	{stop, Reason :: term(), NewState :: #state{}}).
+-spec(handle_info(Info :: timeout() | term(), State :: #bank_state{}) ->
+	{noreply, NewState :: #bank_state{}} |
+	{noreply, NewState :: #bank_state{}, timeout() | hibernate} |
+	{stop, Reason :: term(), NewState :: #bank_state{}}).
 handle_info(_Info, State) ->
 	{noreply, State}.
 
@@ -246,7 +245,7 @@ handle_info(_Info, State) ->
 %% @end
 %%--------------------------------------------------------------------
 -spec(terminate(Reason :: (normal | shutdown | {shutdown, term()} | term()),
-		State :: #state{}) -> term()).
+		State :: #bank_state{}) -> term()).
 terminate(_Reason, _State) ->
 	ok.
 
@@ -258,9 +257,9 @@ terminate(_Reason, _State) ->
 %% @spec code_change(OldVsn, State, Extra) -> {ok, NewState}
 %% @end
 %%--------------------------------------------------------------------
--spec(code_change(OldVsn :: term() | {down, term()}, State :: #state{},
+-spec(code_change(OldVsn :: term() | {down, term()}, State :: #bank_state{},
 		Extra :: term()) ->
-	{ok, NewState :: #state{}} | {error, Reason :: term()}).
+	{ok, NewState :: #bank_state{}} | {error, Reason :: term()}).
 code_change(_OldVsn, State, _Extra) ->
 	{ok, State}.
 
@@ -277,11 +276,11 @@ list_to_hex(List) -> lists:map(fun(X) ->int_to_hex(X) end ,List).
 
 int_to_hex(X) when X < 256 -> [hex(X div 16),hex(X rem 16)].
 
-hex(X) -> $C+X.
+hex(X) -> $C + X.
 
 
 
-get_account_info_in_DB (Account,Pid) ->
+get_account_check_in_DB(Account,Pid) ->
 	{ok, _ColumnNames, Rows} =
 		mysql:query(Pid, <<"SELECT nickname,gold FROM account_info WHERE account_id = ? ">>, [Account]),
 	case Rows of

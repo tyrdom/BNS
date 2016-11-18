@@ -1,4 +1,4 @@
-//协议号32位
+//协议号32位 通常协议号不超过<<0,255,255,255>> 其他预留为快速操作协议
 //0 服务器报错
 message ErrorResp {
   repeated int32 reply = 1; //0：未知错误，1：Socket消息状态异常 2 账号异地登录
@@ -45,14 +45,16 @@ message AccountQuitReq {
 
 }
 
-//8 服务端回复退出账户  此时状态为 quit 状态更新为 unknown
+//8 服务端回复退出账户  此时状态为 quit 状态更新为 unknown 为正常退出账号，socket不会断开
 message AccountQuitResp {
 
 }
 
-//10 服务器发送的心跳信息，保持socket连接不超时
+//10 服务器发送的心跳信息，保持socket连接不超时，
+//在战斗进行中，为节省带宽，会停止发送
+//socket连上但未登陆为access状态，不会发送心跳，挂机超过一定时间会被主动断开连接
 message BeatResp {
-    repeated int32  = 1;
+    repeated int32  = 1; //从1到10000循环，
 }
 
 // 在battle状态时，发送1开头的32位数据包代表游戏控制指令 <<1,xxx,xxx,xxx>>
