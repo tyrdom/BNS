@@ -13,7 +13,7 @@
 
 -include("net_settings.hrl").
 %% API
--export([start_link/0,md5_string/1,login/4,create/4,check/2,quit/3]).
+-export([start_link/0,md5_string/1,login/4,create/4,check/2,quit/3,get_state/2]).
 
 %% gen_server callbacks
 -export([init/1,
@@ -29,17 +29,20 @@
 %%%===================================================================
 %%% API
 %%%===================================================================
+get_state(RQPid,RQItem) ->
+	gen_server:cast(?SERVER,{get_state,RQItem,RQPid}).
+
 quit(Socket, SPid, Type) ->
-	gen_server:call(?SERVER,{quit,Socket, SPid, Type}).
+	gen_server:cast(?SERVER,{quit,Socket, SPid, Type}).
 
 check(Socket,SPid) ->
-	gen_server:call(?SERVER,{check,Socket,SPid}).
+	gen_server:cast(?SERVER,{check,Socket,SPid}).
 
 login(Account,Password,Socket,SPid) ->
-	gen_server:call(?SERVER,{login,Account,Password,Socket,SPid}).
+	gen_server:cast(?SERVER,{login,Account,Password,Socket,SPid}).
 
 create(AccountId,Password,Socket,SPid) ->
-	gen_server:call(?SERVER,{create,AccountId,Password,Socket,SPid}).
+	gen_server:cast(?SERVER,{create,AccountId,Password,Socket,SPid}).
 %%--------------------------------------------------------------------
 %% @doc
 %% Starts the server
@@ -93,11 +96,7 @@ init([]) ->
 	{noreply, NewState :: #bank_state{}, timeout() | hibernate} |
 	{stop, Reason :: term(), Reply :: term(), NewState :: #bank_state{}} |
 	{stop, Reason :: term(), NewState :: #bank_state{}}).
-handle_call({get_state},_From, State) ->
 
-	Reply = State,
-
-	{reply, Reply, State};
 
 handle_call(_Request, _From, State) ->
 	{reply, ok, State}.
@@ -150,7 +149,7 @@ handle_cast({login,Account,Password,Socket, SPid}, State = #bank_state{accountBa
 		[{Account, #account_login{socket = OldSocket,sPid =  OldSPid,password_in_db =  PasswordInDBBin}}] ->
 			ets:delete(Sock_Ac_Table,OldSocket),
 
-			ranc_client:send(error,OldSPid, OldSocket,  other),
+			ranc_client:send(error,OldSPid, OldSocket, other),
 
 			{ok,Account_Check} = get_account_check_in_DB(Account,Pid),
 
@@ -211,6 +210,12 @@ handle_cast({quit,Socket, SPid, Type}, State = #bank_state{socket_account_table 
 			_ ->
 					ranc_client:send(quit,SPid,Socket,ok)
 		end,
+	{noreply, State};
+
+
+handle_cast({get_state,socket_account_table,RQPid}, State) ->
+	Reply =  State#bank_state.socket_account_table,
+	RQPid ! {socket_account_table, Reply},
 	{noreply, State};
 
 handle_cast(_Request, State) ->

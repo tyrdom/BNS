@@ -13,7 +13,7 @@
 -behaviour(ranch_protocol).
 
 %% API
--export([start_link/4,init/4,send/4]).
+-export([start_link/4,init/4,send/4,send/3]).
 
 %% gen_server callbacks
 -export([init/1,
@@ -156,6 +156,22 @@ handle_info({beat_send,Socket,{beat,Msg}}, State = #state{ socket = Socket, tran
   {noreply, NewState, ?TIMEOUT};
 
 
+handle_info({fast_send,{OldStatus,Msg}}, State = #state{ socket = Socket, transport = Transport}) ->
+  Transport:setopts(Socket, [{active, 5}]),
+  io:format("~p socket pid want send ~p ~p ~n",[self(), OldStatus,Msg]),
+  NewState =
+    case OldStatus =:= State#state.status of
+      true ->
+        {NewStatus,Pack} = proto_trans:reply(OldStatus,Msg),
+
+        gen_tcp:send(Socket, Pack),
+        State#state{status = NewStatus};
+      false -> io:format("wrong status"),
+        send(error,self(),Socket,status_error),
+        State#state{status = warning}
+    end,
+  {noreply, NewState, ?TIMEOUT};
+
 handle_info({send,Socket,{OldStatus,Msg}}, State = #state{ socket = Socket, transport = Transport}) ->
   Transport:setopts(Socket, [{active, 5}]),
   io:format("~p socket pid want send ~p ~p ~n",[self(), OldStatus,Msg]),
@@ -224,6 +240,11 @@ code_change(_OldVsn, State, _Extra) ->
 %%%===================================================================
 %%% Internal functions
 %%%===================================================================
+send(battle,SPid,Msg)
+  ->SPid!{fast_send,{battle,Msg}};
+send(Status,SPid,Msg)
+  ->SPid!{fast_send,{Status,Msg}}.
+
 send(beat,SPid,Socket,Msg)
 ->SPid!{beat_send,Socket,{beat,Msg}};
 

@@ -2,6 +2,7 @@
 //0 服务器报错
 message ErrorResp {
   repeated int32 reply = 1; //0：未知错误，1：Socket消息状态异常 2 账号异地登录
+                            //3：战斗时长期没行动，4：战斗时一个tick发送消息频率太快，疑似开变速
 }
 
 //1 客户端请求创建账号 此时状态为unknown 收到后状态更新为create

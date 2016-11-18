@@ -144,7 +144,9 @@ reply_bin(quit,_Msg) ->
 		unknown},
 	{NewS,Code,Bin};
 
-reply_bin(_Other,Msg) -> error,
+
+
+reply_bin(_Other,Msg) ->
 			Code = 0,
 	{Bin,NewS} =
 			case Msg of
@@ -152,7 +154,11 @@ reply_bin(_Other,Msg) -> error,
 															warning};
 						other ->					{iolist_to_binary(fullpow_pb:encode({errorresp,2})),
 															warning};
-						_Other       -> 	{iolist_to_binary(fullpow_pb:encode({errorresp,0})),
+						afk ->            {iolist_to_binary(fullpow_pb:encode({errorresp,3})),
+															warning};
+						too_much ->       {iolist_to_binary(fullpow_pb:encode({errorresp,4})),
+															warning};
+						_SomeOther    -> 	{iolist_to_binary(fullpow_pb:encode({errorresp,0})),
 															warning}
 			end,
 			{NewS,Code,Bin}.

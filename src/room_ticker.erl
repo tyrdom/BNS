@@ -111,7 +111,7 @@ handle_cast(_Request, State) ->
 
 handle_info(timeout, State) ->
   RoomPid = State#state.room_pid,
-  room:broadcast(RoomPid),
+  ok = room:broadcast(RoomPid),
   {noreply, State,?TickTime};
 
 handle_info(_Info, State) ->

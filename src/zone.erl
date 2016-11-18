@@ -23,8 +23,9 @@
 	code_change/3]).
 
 -define(SERVER, ?MODULE).
-
--record(state, {playerList,roomList}).
+-include("account_base_config.hrl").
+-record(state, {socket_account_table, room_table}).
+-record(room_info,{type,player_num}).
 %%%===================================================================
 %%% API
 %%%===================================================================
@@ -59,17 +60,15 @@ start_link() ->
 	{ok, State :: #state{}} | {ok, State :: #state{}, timeout() | hibernate} |
 	{stop, Reason :: term()} | ignore).
 init([]) ->
-	BankState = account_bank:get_state(),
 
 	RoomList = ets:new(roomList,[set]),
-	{ok, #state{roomList = RoomList}}.
+	{ok, #state{room_table = RoomList},0}.
 
 %%--------------------------------------------------------------------
 %% @private
 %% @doc
 %% Handling call messages
-%% @spec  room() -> {RoomPid,PlayerNum,Status}
-%%				player() -> {Socket,Spid,Account}
+%% @spec
 %% @end
 %%--------------------------------------------------------------------
 -spec(handle_call(Request :: term(), From :: {pid(), Tag :: term()},
@@ -80,66 +79,6 @@ init([]) ->
 	{noreply, NewState :: #state{}, timeout() | hibernate} |
 	{stop, Reason :: term(), Reply :: term(), NewState :: #state{}} |
 	{stop, Reason :: term(), NewState :: #state{}}).
-
-handle_call({inZone,Socket,Spid,Account}, _From, State) ->
-	PlayerList = State#state.playerList,
-	ets:insert(PlayerList,{Socket,Spid,Account}),
-	{reply, ok, State};
-
-handle_call({autojoinRoom,Socket,Spid,Account}, _From, State) ->
-	PlayerList = State#state.playerList,
-	Rooms =State#state.roomList,
-	ets:lookup(PlayerList,Socket),
-	[[{RoomPid,PlayerNum,unfull}]] = ets:match(Rooms,{'_','_',unfull},1),
-	room:join(RoomPid,Spid,Socket,Account),
-	case PlayerNum  < ?ROOMMAX-1 of
-		false ->ets:insert(Rooms,{RoomPid,?ROOMMAX,full});
-		true -> ets:insert(Rooms,{RoomPid,(PlayerNum+1),unfull})
-	end,
-
-	{reply, ok, State};
-
-handle_call({createRoom}, _From, State) ->
-	RoomPid = room:start_link(),
-	Rooms =State#state.roomList,
-	case ets:lookup (Rooms,RoomPid) of
-			[]->ets:insert(Rooms,{RoomPid,0,unfull});
-			[_]->error
-	end,
-	{reply, ok, State};
-
-handle_call({outZone,Socket,Spid,_Account}, _From, State) ->
-	PlayerList = State#state.playerList,
-	case ets:lookup(PlayerList,Socket) of
-
-		[_] ->ets:delete(PlayerList,Socket),
-			ok;
-		[] ->error,Spid ! {tcp_closed, Socket}
-	end,
-
-	{reply, ok, State};
-
-handle_call({joinRoom,Socket, SPid,Account,RoomPid}, _From, State) ->
-	Rooms = State#state.roomList,
-	case ets:lookup(Rooms,RoomPid) of
-		[] -> error, SPid ! {tcp_closed, Socket};
-		[{RoomPid,PlayerNum,Status}] ->
-			case Status of
-					full -> error, SPid ! {tcp_closed, Socket};
-					unfull ->
-						room:join(RoomPid, SPid,Socket,Account),
-						case PlayerNum  < ?ROOMMAX-1 of
-							false ->ets:insert(Rooms,{RoomPid,?ROOMMAX,full});
-							true -> ets:insert(Rooms,{RoomPid,(PlayerNum+1),unfull})
-						end
-			end
-	end,
-	{reply, ok, State};
-
-handle_call({joinMatch,Socket,Spid,Account}, _From, State) ->
-	matcher:join(Socket,Spid,Account),
-
-	{reply, ok, State};
 
 handle_call(_Request, _From, State) ->
 	{reply, ok, State}.
@@ -155,8 +94,28 @@ handle_call(_Request, _From, State) ->
 	{noreply, NewState :: #state{}} |
 	{noreply, NewState :: #state{}, timeout() | hibernate} |
 	{stop, Reason :: term(), NewState :: #state{}}).
-handle_cast({getRoomsInfo,Socket,Pid}, State) ->
+
+handle_cast({create_room,Type}, State = #state{room_table = RTable}) ->
+	RoomPid = room:start_link(),
+	ets:insert(RTable,{RoomPid,#room_info{type = Type}}),
 	{noreply, State};
+
+handle_cast({join_room,RoomPid,Socket,SPid}, State = #state{room_table = RTable}) ->
+	RoomPid,#room_info{player_num = PNum} = ets:lookup(RTable,RoomPid),
+	 case PNum < ?ROOMMAX of
+		 true -> {joined , SPid}=room:join_room(RoomPid,SPid),
+			 				ranc_client:send(join,Socket,SPid,RoomPid);
+		 false -> fullroom
+	 end,
+
+	{noreply, State};
+
+handle_cast({delete_room,RoomPid}, State = #state{room_table = RTable}) ->
+
+	ets:delete(RTable,RoomPid),
+	 room:stop(RoomPid),
+	{noreply, State};
+
 handle_cast(_Request, State) ->
 	{noreply, State}.
 
@@ -174,6 +133,13 @@ handle_cast(_Request, State) ->
 	{noreply, NewState :: #state{}} |
 	{noreply, NewState :: #state{}, timeout() | hibernate} |
 	{stop, Reason :: term(), NewState :: #state{}}).
+handle_info({socket_account_table,SAT}, State) ->
+	NewState = State#state{socket_account_table = SAT},
+	{noreply, NewState};
+
+handle_info(timeout, State) ->
+	account_bank:get_state(self(),socket_account_table),
+	{noreply, State,10000};
 handle_info(_Info, State) ->
 	{noreply, State}.
 
