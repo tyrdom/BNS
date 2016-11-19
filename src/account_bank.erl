@@ -79,7 +79,7 @@ init([]) ->
 		{password, ?MYSQL_PS}, {database, ?MYSQL_DB}]),
 	link(MySqlPid),
 	{ok,ZonePid} = zone:start_link(),
-	{ok, #bank_state{accountBank = AccountBank, socket_account_table = Socket_Account_Table,mysqlPid = MySqlPid,zonePid = ZonePid}}.
+	{ok, #bank_state{accountBank = AccountBank, sock_pid_account_table = Socket_Account_Table,mysqlPid = MySqlPid,zonePid = ZonePid}}.
 
 %%--------------------------------------------------------------------
 %% @private
@@ -112,7 +112,7 @@ handle_call(_Request, _From, State) ->
 	{noreply, NewState :: #bank_state{}, timeout() | hibernate} |
 	{stop, Reason :: term(), NewState :: #bank_state{}}).
 
-handle_cast({login,Account,Password,Socket, SPid}, State = #bank_state{accountBank = AcBank, socket_account_table = Sock_Ac_Table}) ->
+handle_cast({login,Account,Password,Socket, SPid}, State = #bank_state{accountBank = AcBank, sock_pid_account_table = SPid_Ac_Table}) ->
 
 	Pid = State#bank_state.mysqlPid,
 	PasswordInDBBin =
@@ -132,7 +132,7 @@ handle_cast({login,Account,Password,Socket, SPid}, State = #bank_state{accountBa
 
 					{ok,Account_Check} = get_account_check_in_DB(Account,Pid),
 					ets:insert(AcBank, {Account,#account_info{account_login =  AccountLogin,account_check = Account_Check}}),
-					ets:insert(Sock_Ac_Table, {Socket,#socket_info{account_id = Account,socket_pid = SPid}}),
+					ets:insert(SPid_Ac_Table, {SPid,#s_pid_info{account_id = Account, socket = Socket,special_status = access}}),
 				  %	TODO	zone:inZone(Account,Socket, SPid),
 
 					ranc_client:send(login,SPid,Socket,ok);
@@ -147,14 +147,14 @@ handle_cast({login,Account,Password,Socket, SPid}, State = #bank_state{accountBa
 					ranc_client:send(login,SPid,Socket,not_exist)
 			end;
 		[{Account, #account_login{socket = OldSocket,sPid =  OldSPid,password_in_db =  PasswordInDBBin}}] ->
-			ets:delete(Sock_Ac_Table,OldSocket),
+			ets:delete(SPid_Ac_Table,OldSPid),
 
 			ranc_client:send(error,OldSPid, OldSocket, other),
 
 			{ok,Account_Check} = get_account_check_in_DB(Account,Pid),
 
 			ets:insert(AcBank, {Account,#account_info{account_login =  AccountLogin,account_check = Account_Check}}),
-			ets:insert(Sock_Ac_Table, {Socket,#socket_info{account_id = Account,socket_pid = SPid}}),
+			ets:insert(SPid_Ac_Table, {SPid,#s_pid_info{account_id = Account, socket = Socket,special_status = access}}),
 
 			ranc_client:send(login,SPid,Socket,other);
 		[{Account,_Other}] ->
@@ -164,8 +164,8 @@ handle_cast({login,Account,Password,Socket, SPid}, State = #bank_state{accountBa
 	end,
 	{noreply, State};
 
-handle_cast({check,Socket,SPid},  State = #bank_state{socket_account_table = SAT,accountBank = ACB}) ->
-	[{Socket,Account}]= ets:lookup(SAT,Socket),
+handle_cast({check,Socket,SPid},  State = #bank_state{sock_pid_account_table = SPAT,accountBank = ACB}) ->
+	[{SPid,#s_pid_info{account_id = Account}}]= ets:lookup(SPAT,SPid),
 	[{Account,#account_info{account_check = #account_check{nickname = Nickname,gold = Gold}}}] = ets:lookup(ACB,Account),
 	ranc_client:send(check,SPid,Socket,{Nickname,Gold}),
 	{noreply, State};
@@ -192,30 +192,30 @@ handle_cast({create,AccountId,Password,Socket, SPid}, State) ->
 	end,
 	{noreply, State};
 
-handle_cast({quit,Socket, SPid, Type}, State = #bank_state{socket_account_table = SAT,accountBank = ACBank}) ->
-		case ets:lookup(SAT,Socket) of
-			[{Socket,AccountId}] -> ets:delete(ACBank,AccountId);
-			[] ->
-				AcList =	ets:match(ACBank , {'$1',#account_info{
-					account_login = #account_login{socket = Socket,
-					sPid = '_',password_in_db = '_'},
-					account_check = '_'}}),
-				F = fun([Account]) -> ets:delete(ACBank,Account) end,
-				lists:map(F,AcList)
-		end,
-		ets:delete(SAT,Socket),
+handle_cast({quit,Socket, SPid, Type}, State = #bank_state{sock_pid_account_table = SAT,accountBank = ACBank}) ->
+  case ets:lookup(SAT, Socket) of
+    [{Socket, AccountId}] -> ets:delete(ACBank, AccountId);
+    [] -> io:format("ets waring bank table not match ~n"),
+      AcList = ets:match(ACBank, {'$1', #account_info{
+        account_login = #account_login{socket = Socket,
+          sPid = '_', password_in_db = '_'},
+        account_check = '_'}}),
+      F = fun([Account]) -> ets:delete(ACBank, Account) end,
+      lists:map(F, AcList)
+  end,
+  ets:delete(SAT, Socket),
 
-		case Type of
-			exception -> ok;
-			_ ->
-					ranc_client:send(quit,SPid,Socket,ok)
-		end,
+  case Type of
+    exception -> ok;
+    _ ->
+      ranc_client:send(quit, SPid, Socket, ok)
+  end,
 	{noreply, State};
 
 
-handle_cast({get_state,socket_account_table,RQPid}, State) ->
-	Reply =  State#bank_state.socket_account_table,
-	RQPid ! {socket_account_table, Reply},
+handle_cast({get_state,sock_pid_account_table,RQPid}, State) ->
+	Reply =  State#bank_state.sock_pid_account_table,
+	RQPid ! {sock_pid_account_table, Reply},
 	{noreply, State};
 
 handle_cast(_Request, State) ->

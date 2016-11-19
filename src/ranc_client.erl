@@ -160,7 +160,9 @@ handle_info({fast_send,{OldStatus,Msg}}, State = #state{ socket = Socket, transp
   Transport:setopts(Socket, [{active, 5}]),
   io:format("~p socket pid want send ~p ~p ~n",[self(), OldStatus,Msg]),
   NewState =
-    case OldStatus =:= State#state.status of
+    case
+    status_check(OldStatus,State#state.status)
+    of
       true ->
         {NewStatus,Pack} = proto_trans:reply(OldStatus,Msg),
 
@@ -176,7 +178,7 @@ handle_info({send,Socket,{OldStatus,Msg}}, State = #state{ socket = Socket, tran
   Transport:setopts(Socket, [{active, 5}]),
   io:format("~p socket pid want send ~p ~p ~n",[self(), OldStatus,Msg]),
   NewState =
-    case OldStatus =:= State#state.status of
+    case status_check(OldStatus,State#state.status) of
     true ->
     {NewStatus,Pack} = proto_trans:reply(OldStatus,Msg),
 
@@ -240,13 +242,17 @@ code_change(_OldVsn, State, _Extra) ->
 %%%===================================================================
 %%% Internal functions
 %%%===================================================================
-send(battle,SPid,Msg)
-  ->SPid!{fast_send,{battle,Msg}};
-send(Status,SPid,Msg)
-  ->SPid!{fast_send,{Status,Msg}}.
 
-send(beat,SPid,Socket,Msg)
-->SPid!{beat_send,Socket,{beat,Msg}};
+send(Status,SPid,Msg) ->
+  SPid!{fast_send,{Status,Msg}}.
 
-send(StatusOrType,SPid,Socket,Msg)
-  ->SPid!{send,Socket,{StatusOrType,Msg}}.
+send(beat,SPid,Socket,Msg) ->
+  SPid!{beat_send,Socket,{beat,Msg}};
+
+send(StatusOrType,SPid,Socket,Msg) ->
+  SPid!{send,Socket,{StatusOrType,Msg}}.
+
+status_check({OldStatus,_Some},{Status,_SomeOther}) ->
+  OldStatus=:=Status;
+status_check(OldStatus,Status) ->
+  OldStatus=:=Status.

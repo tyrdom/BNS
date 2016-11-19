@@ -10,23 +10,30 @@
 -author("Administrator").
 -include("fullpow_pb.hrl").
 %% API
--export([call/3,call/4,call/5,reply/2]).
+-export([call/3,call/4, co_call/5,reply/2,ac_call/4]).
+ac_call({battle,RoomPid},AcMsg,_Socket,SPid) -> ok,
+		room:do_movement(RoomPid, SPid,	AcMsg).
 
 call(exc_quit,Socket,Pid) ->
-	call(quit,7,exception,Socket,Pid).
+	co_call(quit,7,exception,Socket,Pid).
 
-call(Status,Data,Socket,Pid) ->
-	<<Number:32,Msg/binary>> = Data,
+call(Status,<<1:8,AcMsg/binary>>,Socket,Pid) ->
 
-	call(Status,Number,Msg,Socket,Pid).
 
-call(unknown,3,Msg,Socket,Pid) ->
+	ac_call(Status,AcMsg,Socket,Pid);
+
+call(Status,<<Number:32,Msg/binary>>,Socket,Pid) ->
+
+
+	co_call(Status,Number,Msg,Socket,Pid).
+
+co_call(unknown,3,Msg,Socket,Pid) ->
 
 			 {accountloginreq,Account,Password} = fullpow_pb:decode_accountloginreq(Msg),
 									account_bank:login(Account,Password,Socket,Pid),
 									login;
 
-call(unknown,1,Msg,Socket,Pid) ->
+co_call(unknown,1,Msg,Socket,Pid) ->
 
 				{accountcreatereq,Account,Password} = fullpow_pb:decode_accountcreatereq(Msg),
 				account_bank:create(Account,Password,Socket,Pid),
@@ -34,7 +41,7 @@ call(unknown,1,Msg,Socket,Pid) ->
 %%//5 客户端请求查看账户信息 此时状态为 access
 %%message AccountCheckReq {
 %%}
-call(access,5,Msg,Socket,Pid) ->
+co_call(access,5,Msg,Socket,Pid) ->
 				{accountcheckreq} = fullpow_pb:decode_accountcheckreq(Msg),
 				account_bank:check(Socket,Pid),
  				check;
@@ -43,13 +50,16 @@ call(access,5,Msg,Socket,Pid) ->
 %%message AccountQuitReq {
 %%
 %%}
-call(_Any,7,Msg,Socket,Pid) ->
+co_call(_Any,7,Msg,Socket,Pid) ->
 
 	account_bank:quit(Socket,Pid,Msg),
 	quit;
 
+co_call(access,15,Msg,Socket,SPid) ->
 
-call(_Other,_Number,_Msg,_Socket,_Pid) ->
+				{join,undefine};
+
+co_call(_Other,_Number,_Msg,_Socket,_Pid) ->
 	error.
 
 
@@ -66,7 +76,10 @@ call(_Other,_Number,_Msg,_Socket,_Pid) ->
 
 reply(StatusOrType,Msg) ->
 	{NewS,Code,Bin} = reply_bin(StatusOrType,Msg),
-	{NewS,<<Code:32,Bin/binary>>}.
+	case  Bin of
+		nil ->	<<Code:32>>;
+		_Other ->{NewS,<<Code:32,Bin/binary>>}
+	end.
 
 %%
 %%//10 服务器发送的心跳信息，保持socket连接不超时
@@ -74,12 +87,32 @@ reply(StatusOrType,Msg) ->
 %%repeated int32  = 1;
 %%}
 
+
+
+
 reply_bin(beat,Msg) ->
   Code = 10,
   {Bin,NewS} = {iolist_to_binary(fullpow_pb:encode({beatresp,Msg})),
                 keep},
   {NewS,Code,Bin};
 
+
+%%//12 服务端回复退出账户  此时状态为 join 成功状态更新为{battle,RoomPid} 不成功更新为 access
+%%message AccountJoinResp {
+%%repeated int32 reply = 1; //1成功，2人满 3超时
+%%}
+reply_bin({join,RoomPid},Msg) ->
+	Code = 12,
+	{Bin,NewS} =
+		case Msg of
+				ok ->		 		{iolist_to_binary(fullpow_pb:encode({accountjoinresp,1})),
+										{battle,RoomPid}};
+				full -> 		{iolist_to_binary(fullpow_pb:encode({accountjoinresp,2})),
+										access};
+				timeout ->	{iolist_to_binary(fullpow_pb:encode({accountjoinresp,3})),
+										access}
+		end,
+	{NewS,Code,Bin};
 reply_bin(create,Msg) ->
 
 
@@ -139,9 +172,7 @@ reply_bin(check,Msg) ->
 
 reply_bin(quit,_Msg) ->
 	Code = 8,
-
-	{Bin,NewS} = {
-		unknown},
+	{Bin,NewS} ={nil,unknown},
 	{NewS,Code,Bin};
 
 

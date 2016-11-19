@@ -55,8 +55,23 @@ message AccountQuitResp {
 //在战斗进行中，为节省带宽，会停止发送
 //socket连上但未登陆为access状态，不会发送心跳，挂机超过一定时间会被主动断开连接
 message BeatResp {
-    repeated int32  = 1; //从1到10000循环，
+    repeated int32 reply = 1; //从1到10000循环，
 }
+
+//11 请求加入 状态需要access 发出后状态为join
+message AccountJoinReq {
+    required int32 type = 1; // 0:指定号码加入 1：自动加入：party模式  2  自动加入：match模式
+  required int32 number = 2;
+}
+
+//12 服务端回复退出账户  此时状态为 join 成功状态更新为battle 不成功更新为 access
+message AccountJoinResp {
+    repeated int32 reply = 1; //1成功，2人满 3超时
+}
+
+
+
+
 
 // 在battle状态时，发送1开头的32位数据包代表游戏控制指令 <<1,xxx,xxx,xxx>>
 

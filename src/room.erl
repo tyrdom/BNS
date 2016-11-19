@@ -145,30 +145,6 @@ handle_call({broadcast}, _From, State) ->
 
 
 
-handle_call({join, SockPid}, _From, State = #state{seats = Seats, type = Type, ob = Ob}) ->
-	{Status,NewSeat} =
-		case Type of
-			party -> A_seat = find_seat(Seats),
-				case is_integer(A_seat) of
-					true -> put(SockPid, #sock_p_info{movement = 0, lost_tick = 0, r_times = 0, seat = A_seat}),
-									{joined, sit_seat(Seats,A_seat,SockPid)};
-					false ->
-						case Ob of
-							on 		 ->	{ob, Seats};
-							_Other -> {deny, Seats}
-						end
-				end;
-
-			_Other -> {deny, Seats}
-		end,
-	NewState = State#state{seats = NewSeat},
-	Reply = {Status,SockPid},
-	{reply, Reply, NewState};
-
-handle_call({quit,SockPid}, _From, State=#state{seats = Seats}) ->
-
-	erase(SockPid),
-	{reply, {quitted,SockPid}, State};
 
 handle_call(_Request, _From, State) ->
 	{reply, ok, State}.
@@ -184,6 +160,35 @@ handle_call(_Request, _From, State) ->
 	{noreply, NewState :: #state{}} |
 	{noreply, NewState :: #state{}, timeout() | hibernate} |
 	{stop, Reason :: term(), NewState :: #state{}}).
+
+handle_cast({join, SockPid},  State = #state{seats = Seats, type = Type, ob = Ob}) ->
+	{Msg,NewSeat} =
+		case Type of
+			party -> A_seat = find_seat(Seats),
+				case is_integer(A_seat) of
+					true -> put(SockPid, #sock_p_info{movement = 0, lost_tick = 0, r_times = 0, seat = A_seat}),
+						{join, sit_seat(Seats,A_seat,SockPid)};
+					false ->
+						case Ob of
+							on 		 ->	{join, Seats};
+							_Other -> {full, Seats}
+						end
+				end;
+
+			_Other -> {full, Seats}
+		end,
+	NewState = State#state{seats = NewSeat},
+
+	ranc_client:send(join,SockPid,Msg),
+	{noreply, NewState};
+
+handle_cast({quit,SockPid}, State=#state{seats = Seats}) ->
+	%%TODO outseat
+	erase(SockPid),
+	{noreply,  State};
+
+
+
 handle_cast({do_movement, SockPid,Movement}, State) ->
 	#sock_p_info{r_times = R_times} = get(SockPid),
 	put(SockPid,#sock_p_info{movement = Movement,lost_tick = 0,r_times = R_times+1}),
@@ -194,7 +199,6 @@ handle_cast({do_movement, SockPid,Movement}, State) ->
 			false ->ok, ticker_check(self()),
 							1
 		end,
-
 
 	NewState =State#state{receive_cycle_count = NewReceiveCount},
 

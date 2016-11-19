@@ -13,7 +13,7 @@
 
 %% API
 -export([start_link/0,inZone/3]).
--include("account_base_config.hrl").
+
 %% gen_server callbacks
 -export([init/1,
 	handle_call/3,
@@ -100,15 +100,17 @@ handle_cast({create_room,Type}, State = #state{room_table = RTable}) ->
 	ets:insert(RTable,{RoomPid,#room_info{type = Type}}),
 	{noreply, State};
 
-handle_cast({join_room,RoomPid,Socket,SPid}, State = #state{room_table = RTable}) ->
+handle_cast({join_room,RoomPid,_Socket,SPid}, State = #state{room_table = RTable,socket_account_table = SAT}) ->
 	RoomPid,#room_info{player_num = PNum} = ets:lookup(RTable,RoomPid),
 	 case PNum < ?ROOMMAX of
-		 true -> {joined , SPid}=room:join_room(RoomPid,SPid),
-			 				ranc_client:send(join,Socket,SPid,RoomPid);
+		 true -> room:join_room(RoomPid,SPid),
+		 					ets:SAT;
 		 false -> fullroom
 	 end,
 
 	{noreply, State};
+
+
 
 handle_cast({delete_room,RoomPid}, State = #state{room_table = RTable}) ->
 
@@ -133,13 +135,13 @@ handle_cast(_Request, State) ->
 	{noreply, NewState :: #state{}} |
 	{noreply, NewState :: #state{}, timeout() | hibernate} |
 	{stop, Reason :: term(), NewState :: #state{}}).
-handle_info({socket_account_table,SAT}, State) ->
+handle_info({sock_pid_account_table,SAT}, State) ->
 	NewState = State#state{socket_account_table = SAT},
 	{noreply, NewState};
 
 handle_info(timeout, State) ->
-	account_bank:get_state(self(),socket_account_table),
-	{noreply, State,10000};
+	account_bank:get_state(self(),sock_pid_account_table),
+	{noreply, State, 10000};
 handle_info(_Info, State) ->
 	{noreply, State}.
 
