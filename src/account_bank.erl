@@ -132,7 +132,7 @@ handle_cast({login,Account,Password,Socket, SPid}, State = #bank_state{accountBa
 
 					{ok,Account_Check} = get_account_check_in_DB(Account,Pid),
 					ets:insert(AcBank, {Account,#account_info{account_login =  AccountLogin,account_check = Account_Check}}),
-					ets:insert(SPid_Ac_Table, {SPid,#s_pid_info{account_id = Account, socket = Socket,special_status = access}}),
+					ets:insert(SPid_Ac_Table, {SPid,#sock_pid_account_info{account_id = Account, socket = Socket,special_status = access}}),
 				  %	TODO	zone:inZone(Account,Socket, SPid),
 
 					ranc_client:send(login,SPid,Socket,ok);
@@ -154,7 +154,7 @@ handle_cast({login,Account,Password,Socket, SPid}, State = #bank_state{accountBa
 			{ok,Account_Check} = get_account_check_in_DB(Account,Pid),
 
 			ets:insert(AcBank, {Account,#account_info{account_login =  AccountLogin,account_check = Account_Check}}),
-			ets:insert(SPid_Ac_Table, {SPid,#s_pid_info{account_id = Account, socket = Socket,special_status = access}}),
+			ets:insert(SPid_Ac_Table, {SPid,#sock_pid_account_info{account_id = Account, socket = Socket,special_status = access}}),
 
 			ranc_client:send(login,SPid,Socket,other);
 		[{Account,_Other}] ->
@@ -165,7 +165,7 @@ handle_cast({login,Account,Password,Socket, SPid}, State = #bank_state{accountBa
 	{noreply, State};
 
 handle_cast({check,Socket,SPid},  State = #bank_state{sock_pid_account_table = SPAT,accountBank = ACB}) ->
-	[{SPid,#s_pid_info{account_id = Account}}]= ets:lookup(SPAT,SPid),
+	[{SPid,#sock_pid_account_info{account_id = Account}}]= ets:lookup(SPAT,SPid),
 	[{Account,#account_info{account_check = #account_check{nickname = Nickname,gold = Gold}}}] = ets:lookup(ACB,Account),
 	ranc_client:send(check,SPid,Socket,{Nickname,Gold}),
 	{noreply, State};

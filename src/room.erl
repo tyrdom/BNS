@@ -10,10 +10,10 @@
 -author("Administrator").
 
 -behaviour(gen_server).
-
+-include("account_base_config.hrl").
 
 %% API
--export([start_link/0,broadcast/1,stop/1,join_room/2]).
+-export([start_link/1,broadcast/1,stop/1,join_room/2,ticker_check/1,reboot_ticker/1]).
 
 %% gen_server callbacks
 -export([init/1,
@@ -25,9 +25,9 @@
 -include("other_settings.hrl").
 -define(SERVER, ?MODULE).
 
--record(state, {seats, ticker, tick_cycle_count, receive_cycle_count, type ,ob}).
+-record(state, {seats, ticker, tick_cycle_count, receive_cycle_count, type ,ob,sock_pid_account_table}).
 %{_Movement,_LostTick,_R_times}
--record(sock_p_info,{movement,lost_tick,r_times,seat}).
+-record(sock_pid_battle_info,{movement,lost_tick,r_times,seat}).
 %%%===================================================================
 %%% API
 %%%===================================================================
@@ -53,11 +53,37 @@ stop(RoomPid) ->
 %%
 %% @end
 %%--------------------------------------------------------------------
--spec(start_link() ->
+-spec(start_link(SPAT::term()) ->
 	{ok, Pid :: pid()} | ignore | {error, Reason :: term()}).
-start_link() ->
-	gen_server:start_link(?MODULE, [], []).
+start_link(SPAT) ->
+	gen_server:start_link(?MODULE, [SPAT], []).
 
+
+init_seat(0) -> [];
+
+init_seat(N) ->
+	[{N,empty}] ++ init_seat(N-1).
+
+find_seat([]) -> not_find;
+
+find_seat([{Num,empty}|_Q]) -> Num;
+
+find_seat([{_Num,_SomeOne}|Q]) ->
+	find_seat(Q).
+
+sit_seat(Seats,A_seat,SockPid) ->
+	lists:keyreplace(A_seat,1,Seats,{A_seat,SockPid}).
+
+left_seat(Socket_Pid,Seats) ->
+
+	Fun =
+		fun(Seat_Status) ->
+			case Seat_Status of
+				Socket_Pid ->  empty ;
+				_Other -> Seat_Status
+				end
+		end,
+	lists:keymap(Fun,2,Seats).
 %%%===================================================================
 %%% gen_server callbacks
 %%%===================================================================
@@ -76,26 +102,11 @@ start_link() ->
 -spec(init(Args :: term()) ->
 	{ok, State :: #state{}} | {ok, State :: #state{}, timeout() | hibernate} |
 	{stop, Reason :: term()} | ignore).
-init([]) ->
+init([SPAT]) ->
 	Pid = self(),
 	Ticker = room_ticker:start_link(Pid),
 	Seat =init_seat(?ROOMMAX),
-	{ok, #state{seats = Seat,ticker = Ticker,tick_cycle_count = 0, receive_cycle_count = 0,type = party,ob = off}}.
-
-init_seat(0) -> [];
-
-init_seat(N) ->
-	[{N,empty}] ++ init_seat(N-1).
-
-find_seat([]) -> not_find;
-
-find_seat([{Num,empty}|_Q]) -> Num;
-
-find_seat([{_Num,_SomeOne}|Q]) ->
-	find_seat(Q).
-
-sit_seat(Seats,A_seat,SockPid) ->
-	lists:keyreplace(A_seat,1,Seats,{A_seat,SockPid}).
+	{ok, #state{seats = Seat,ticker = Ticker,tick_cycle_count = 0, receive_cycle_count = 0,type = party,ob = off,sock_pid_account_table = SPAT}}.
 
 
 %%--------------------------------------------------------------------
@@ -118,17 +129,17 @@ handle_call({broadcast}, _From, State) ->
 	Tick = State#state.tick_cycle_count,
 
 	Raw_Msg = get(),
-	Shorter = fun({SPid,#sock_p_info{movement = M}})-> {SPid,M} end,
+	Shorter = fun({SPid,#sock_pid_battle_info{movement = M}})-> {SPid,M} end,
 
 	Broadcast_Msg = lists:map(Shorter,Raw_Msg),
 
 	B =
 		fun (ASockMsg,Acc)
 			->
-			{SockPid,_SomeThing} = ASockMsg,
-			ranc_client:send(battle,SockPid,Broadcast_Msg),
-			 a_player_check(self(),SockPid),
-			Acc
+				{SockPid,_SomeThing} = ASockMsg,
+				ranc_client:send(battle,SockPid,Broadcast_Msg),
+				a_player_check(self(),SockPid),
+				Acc
 		end,
 
 	lists:foldl(B, ok, Broadcast_Msg),
@@ -161,37 +172,46 @@ handle_call(_Request, _From, State) ->
 	{noreply, NewState :: #state{}, timeout() | hibernate} |
 	{stop, Reason :: term(), NewState :: #state{}}).
 
-handle_cast({join, SockPid},  State = #state{seats = Seats, type = Type, ob = Ob}) ->
+handle_cast({join, SockPid},  State = #state{seats = Seats, type = Type, ob = Ob,sock_pid_account_table = SPAT}) ->
 	{Msg,NewSeat} =
+	case ets:lookup(SPAT,SockPid) of
+		[] -> {error,Seats};
+		[{SockPid,SPA = #sock_pid_account_info{special_status = undefined}}] ->
 		case Type of
 			party -> A_seat = find_seat(Seats),
 				case is_integer(A_seat) of
-					true -> put(SockPid, #sock_p_info{movement = 0, lost_tick = 0, r_times = 0, seat = A_seat}),
-						{join, sit_seat(Seats,A_seat,SockPid)};
+					true -> put(SockPid, #sock_pid_battle_info{movement = 0, lost_tick = 0, r_times = 0, seat = A_seat}),
+									ets:insert(SPAT,{SockPid,SPA#sock_pid_account_info{special_status = in_battle}}),
+									{ok, sit_seat(Seats,A_seat,SockPid)};
 					false ->
 						case Ob of
-							on 		 ->	{join, Seats};
+							on 		 -> ets:insert(SPAT,{SockPid,SPA#sock_pid_account_info{special_status = in_battle}}),
+												{ok, Seats};
 							_Other -> {full, Seats}
 						end
 				end;
 
 			_Other -> {full, Seats}
-		end,
+		end
+	end,
 	NewState = State#state{seats = NewSeat},
 
-	ranc_client:send(join,SockPid,Msg),
+	ranc_client:send({join,self()},SockPid,Msg),
+
 	{noreply, NewState};
 
 handle_cast({quit,SockPid}, State=#state{seats = Seats}) ->
-	%%TODO outseat
+	%%TODO out_seat
+	NewSeat = left_seat(SockPid,Seats),
 	erase(SockPid),
-	{noreply,  State};
+	NewState = State#state{seats =NewSeat},
+	{noreply,  NewState};
 
 
 
 handle_cast({do_movement, SockPid,Movement}, State) ->
-	#sock_p_info{r_times = R_times} = get(SockPid),
-	put(SockPid,#sock_p_info{movement = Movement,lost_tick = 0,r_times = R_times+1}),
+	#sock_pid_battle_info{r_times = R_times} = get(SockPid),
+	put(SockPid,#sock_pid_battle_info{movement = Movement,lost_tick = 0,r_times = R_times+1}),
 	OldReceiveCount = State#state.receive_cycle_count,
 	NewReceiveCount =
 		case OldReceiveCount <10000 of
@@ -206,19 +226,19 @@ handle_cast({do_movement, SockPid,Movement}, State) ->
 
 
 handle_cast({a_player_check,SockPid}, State) ->
-	#sock_p_info{movement = Movement,lost_tick = LostTick,r_times = R_times} = get(SockPid),
+	#sock_pid_battle_info{movement = Movement,lost_tick = LostTick,r_times = R_times} = get(SockPid),
 	case R_times>3 of
 		true ->ranc_client:send(a_player_check_error,SockPid,too_much);
 		false -> ok
 	end,
 	case LostTick >5 of
 		true ->
-			put(SockPid,#sock_p_info{movement = 0, lost_tick = LostTick + 1, r_times = 0}),
+			put(SockPid,#sock_pid_battle_info{movement = 0, lost_tick = LostTick + 1, r_times = 0}),
 			case LostTick > 200 of
 				true -> ranc_client:send(a_player_check_error,SockPid,afk);
 				false -> ok
 			end;
-		false -> put(SockPid,#sock_p_info{movement = Movement,lost_tick = LostTick + 1,r_times = 0})
+		false -> put(SockPid,#sock_pid_battle_info{movement = Movement,lost_tick = LostTick + 1,r_times = 0})
 	end,
 
 	{noreply, State};
@@ -233,9 +253,6 @@ handle_cast({ticker_check}, State) ->
 	end,
 	{noreply, State};
 
-handle_cast({fast_quit,SockPid}, State) ->
-	erase(SockPid),
-	{noreply, State};
 
 handle_cast(_Request, State) ->
 	{noreply, State}.

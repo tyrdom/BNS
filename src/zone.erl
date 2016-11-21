@@ -24,7 +24,7 @@
 
 -define(SERVER, ?MODULE).
 -include("account_base_config.hrl").
--record(state, {socket_account_table, room_table}).
+-record(state, {sock_pid_account_table, room_table}).
 -record(room_info,{type,player_num}).
 %%%===================================================================
 %%% API
@@ -95,16 +95,15 @@ handle_call(_Request, _From, State) ->
 	{noreply, NewState :: #state{}, timeout() | hibernate} |
 	{stop, Reason :: term(), NewState :: #state{}}).
 
-handle_cast({create_room,Type}, State = #state{room_table = RTable}) ->
-	RoomPid = room:start_link(),
+handle_cast({create_room,Type}, State = #state{room_table = RTable,sock_pid_account_table = SPAT}) ->
+	RoomPid = room:start_link(SPAT),
 	ets:insert(RTable,{RoomPid,#room_info{type = Type}}),
 	{noreply, State};
 
-handle_cast({join_room,RoomPid,_Socket,SPid}, State = #state{room_table = RTable,socket_account_table = SAT}) ->
+handle_cast({join_room,RoomPid,_Socket,SPid}, State = #state{room_table = RTable, sock_pid_account_table = SAT}) ->
 	RoomPid,#room_info{player_num = PNum} = ets:lookup(RTable,RoomPid),
 	 case PNum < ?ROOMMAX of
-		 true -> room:join_room(RoomPid,SPid),
-		 					ets:SAT;
+		 true -> room:join_room(RoomPid,SPid);
 		 false -> fullroom
 	 end,
 
@@ -115,8 +114,10 @@ handle_cast({join_room,RoomPid,_Socket,SPid}, State = #state{room_table = RTable
 handle_cast({delete_room,RoomPid}, State = #state{room_table = RTable}) ->
 
 	ets:delete(RTable,RoomPid),
-	 room:stop(RoomPid),
+	room:stop(RoomPid),
 	{noreply, State};
+
+
 
 handle_cast(_Request, State) ->
 	{noreply, State}.
@@ -136,7 +137,7 @@ handle_cast(_Request, State) ->
 	{noreply, NewState :: #state{}, timeout() | hibernate} |
 	{stop, Reason :: term(), NewState :: #state{}}).
 handle_info({sock_pid_account_table,SAT}, State) ->
-	NewState = State#state{socket_account_table = SAT},
+	NewState = State#state{sock_pid_account_table = SAT},
 	{noreply, NewState};
 
 handle_info(timeout, State) ->
@@ -179,6 +180,6 @@ code_change(_OldVsn, State, _Extra) ->
 %%% Internal functions
 %%%===================================================================
 
-inZone(Account,Socket,Spid) ->gen_server:call(?SERVER,{inZone,Socket,Spid,Account}).
+inZone(Account,Socket, SPid) ->gen_server:call(?SERVER,{inZone,Socket, SPid,Account}).
 
 matchroom(_Rooms) ->todo. %TODO get a room which have a seat

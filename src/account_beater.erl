@@ -112,9 +112,9 @@ handle_cast(_Request, State) ->
 handle_info(timeout,State = #state{socket_account_table = SAT,beat = Beat}) ->
   Fun =
     fun(SAM,ok) ->
-      {SPid,#s_pid_info{socket = Socket ,special_status = Status}} = SAM,
+      {SPid,#sock_pid_account_info{socket = Socket ,special_status = Status}} = SAM,
       case Status of
-        in_battle -> not_send;
+        in_battle -> ok;
         _Other -> ranc_client:send(beat,SPid,Socket,Beat),ok
       end
     end,
