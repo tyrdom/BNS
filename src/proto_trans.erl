@@ -109,6 +109,7 @@ reply_bin(beat,Msg) ->
   {NewS,Code,Bin};
 
 
+
 %%//12 服务端回复退出账户  此时状态为 join 成功状态更新为{battle,RoomPid} 不成功更新为 access
 %%message AccountJoinResp {
 %%repeated int32 reply = 1; //1成功，2人满 3超时
