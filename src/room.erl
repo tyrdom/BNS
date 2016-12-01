@@ -10,10 +10,10 @@
 -author("Administrator").
 
 -behaviour(gen_server).
--include("account_base_config.hrl").
-
+-include("base_config.hrl").
+-include("other_settings.hrl").
 %% API
--export([start_link/1,broadcast/1,stop/1,join_room/2,ticker_check/1,reboot_ticker/1]).
+-export([start_link/3,broadcast/1,stop/1,join_room/3,ticker_check/1,reboot_ticker/1,do_movement/3]).
 
 %% gen_server callbacks
 -export([init/1,
@@ -22,12 +22,14 @@
 	handle_info/2,
 	terminate/2,
 	code_change/3]).
--include("other_settings.hrl").
+
 -define(SERVER, ?MODULE).
 
--record(state, {seats, ticker, tick_cycle_count, receive_cycle_count, type ,ob,sock_pid_account_table}).
-%{_Movement,_LostTick,_R_times}
--record(sock_pid_battle_info,{movement,lost_tick,r_times,seat}).
+-record(state, {seats, ticker, tick_cycle_count, receive_cycle_count,
+								type,ob,rooms_table,
+								sock_pid_account_table,allow_players}).
+
+
 %%%===================================================================
 %%% API
 %%%===================================================================
@@ -43,47 +45,60 @@ broadcast(RoomPid) ->
 ticker_check(RoomPid) ->
 	gen_server:cast(RoomPid,{ticker_check}).
 
-join_room(RoomPid,SocketPid) ->
-	gen_server:call(RoomPid,{join,SocketPid}).
+join_room(RoomPid,SocketPid,Rank) ->
+	gen_server:call(RoomPid,{join,SocketPid,Rank}).
 stop(RoomPid) ->
 	gen_server:stop(RoomPid).
+
+
+do_movement(RoomPid, SPid,	AcMsg) ->
+	gen_server:cast(RoomPid,{do_movement, SPid,	AcMsg}).
 %%--------------------------------------------------------------------
 %% @doc
 %% Starts the server
 %%
 %% @end
 %%--------------------------------------------------------------------
--spec(start_link(SPAT::term()) ->
+-spec(start_link(SPAT::term(),Al::term(),RoT::term()) ->
 	{ok, Pid :: pid()} | ignore | {error, Reason :: term()}).
-start_link(SPAT) ->
-	gen_server:start_link(?MODULE, [SPAT], []).
+start_link(SPAT,Allow_Players,Room_table) ->
+	gen_server:start_link(?MODULE, [SPAT,Allow_Players,Room_table], []).
 
 
 init_seat(0) -> [];
 
 init_seat(N) ->
-	[{N,empty}] ++ init_seat(N-1).
+	[#seat_info{seat = N,sock_pid = empty,rank = 0}] ++ init_seat(N-1).
 
 find_seat([]) -> not_find;
 
-find_seat([{Num,empty}|_Q]) -> Num;
+find_seat([#seat_info{seat = Num,sock_pid = empty,rank = 0}|_Q]) -> Num;
 
-find_seat([{_Num,_SomeOne}|Q]) ->
+find_seat([_SeatInfo|Q]) ->
 	find_seat(Q).
 
-sit_seat(Seats,A_seat,SockPid) ->
-	lists:keyreplace(A_seat,1,Seats,{A_seat,SockPid}).
+sit_seat(Seats,Seat_Info = #seat_info{seat = A_seat}) ->
+	lists:keyreplace(A_seat,2,Seats,Seat_Info).
 
-left_seat(Socket_Pid,Seats) ->
+left_seat(Socket_Pid,Seat) ->
+	left_seat(Socket_Pid,[],Seat).
 
-	Fun =
-		fun(Seat_Status) ->
-			case Seat_Status of
-				Socket_Pid ->  empty ;
-				_Other -> Seat_Status
-				end
-		end,
-	lists:keymap(Fun,2,Seats).
+left_seat(_Sock_Pid,CheckedSeats,[]) ->
+		{CheckedSeats,0};
+
+left_seat(Sock_Pid,CheckedSeats,RestSeats) ->
+		[Checking|Rest_Rest_Seats] =RestSeats,
+			case Checking of
+				#seat_info{sock_pid = Sock_Pid,rank = Rank} ->
+					NewSeats = CheckedSeats ++ Rest_Rest_Seats ++ [Checking#seat_info{sock_pid = 0,rank = 0}],
+					{NewSeats,Rank};
+				_Other ->
+					left_seat(Sock_Pid,(CheckedSeats ++ [Checking]),Rest_Rest_Seats)
+			end.
+
+
+
+
 %%%===================================================================
 %%% gen_server callbacks
 %%%===================================================================
@@ -102,11 +117,14 @@ left_seat(Socket_Pid,Seats) ->
 -spec(init(Args :: term()) ->
 	{ok, State :: #state{}} | {ok, State :: #state{}, timeout() | hibernate} |
 	{stop, Reason :: term()} | ignore).
-init([SPAT]) ->
+init([SPAT,Allow_Players,Room_Table]) ->
 	Pid = self(),
 	Ticker = room_ticker:start_link(Pid),
-	Seat =init_seat(?ROOMMAX),
-	{ok, #state{seats = Seat,ticker = Ticker,tick_cycle_count = 0, receive_cycle_count = 0,type = party,ob = off,sock_pid_account_table = SPAT}}.
+	Seat =init_seat(?ROOM_MAX),
+	{ok, #state{seats = Seat,ticker = Ticker,tick_cycle_count = 0,allow_players = Allow_Players,
+							rooms_table = Room_Table,
+							receive_cycle_count = 0,type = party,ob = off,
+							sock_pid_account_table = SPAT}}.
 
 
 %%--------------------------------------------------------------------
@@ -155,8 +173,6 @@ handle_call({broadcast}, _From, State) ->
 	{reply, ok, NewState};
 
 
-
-
 handle_call(_Request, _From, State) ->
 	{reply, ok, State}.
 
@@ -172,7 +188,9 @@ handle_call(_Request, _From, State) ->
 	{noreply, NewState :: #state{}, timeout() | hibernate} |
 	{stop, Reason :: term(), NewState :: #state{}}).
 
-handle_cast({join, SockPid},  State = #state{seats = Seats, type = Type, ob = Ob,sock_pid_account_table = SPAT}) ->
+handle_cast({join, SockPid, Rank},  State = #state{seats = Seats, type = Type, ob = Ob,
+																							sock_pid_account_table = SPAT ,
+																							allow_players = undefined,rooms_table = RTa}) ->
 	{Msg,NewSeat} =
 	case ets:lookup(SPAT,SockPid) of
 		[] -> {error,Seats};
@@ -180,9 +198,16 @@ handle_cast({join, SockPid},  State = #state{seats = Seats, type = Type, ob = Ob
 		case Type of
 			party -> A_seat = find_seat(Seats),
 				case is_integer(A_seat) of
-					true -> put(SockPid, #sock_pid_battle_info{movement = 0, lost_tick = 0, r_times = 0, seat = A_seat}),
+
+					true -> Room_Pid = self(),
+									[{Room_Pid,Room_Info = #room_info{player_num = PNum,average_rank = AR}}] = ets:lookup(RTa,Room_Pid),
+									ets:insert(RTa,{Room_Pid,Room_Info#room_info{player_num = PNum + 1,
+									average_rank = ((AR * PNum + Rank) /(PNum +1))}}),
+
+									put(SockPid, #sock_pid_battle_info{movement = 0, lost_tick = 0, r_times = 0, seat = A_seat}),
 									ets:insert(SPAT,{SockPid,SPA#sock_pid_account_info{special_status = in_battle}}),
-									{ok, sit_seat(Seats,A_seat,SockPid)};
+									Seat_Info = #seat_info{seat = A_seat,sock_pid = SockPid,rank = Rank},
+									{ok, sit_seat(Seats,Seat_Info)};
 					false ->
 						case Ob of
 							on 		 -> ets:insert(SPAT,{SockPid,SPA#sock_pid_account_info{special_status = in_battle}}),
@@ -200,10 +225,22 @@ handle_cast({join, SockPid},  State = #state{seats = Seats, type = Type, ob = Ob
 
 	{noreply, NewState};
 
-handle_cast({quit,SockPid}, State=#state{seats = Seats}) ->
+handle_cast({quit,SockPid}, State=#state{seats = Seats,rooms_table = RT}) ->
 	%%TODO out_seat
-	NewSeat = left_seat(SockPid,Seats),
+	{NewSeat,Rank} = left_seat(SockPid,Seats),
 	erase(SockPid),
+
+	Room_Pid = self(),
+	[{Room_Pid,Room_Info = #room_info{player_num = PNum,average_rank = AR}}] = ets:lookup(RT,Room_Pid),
+
+	NewAvgRank =
+	case PNum > 1 of
+		true ->(AR * PNum - Rank)/(PNum - 1);
+		false -> 0
+	end,
+
+	ets:insert(RT,{Room_Pid,Room_Info#room_info{player_num = PNum -1 ,average_rank = NewAvgRank}}),
+
 	NewState = State#state{seats =NewSeat},
 	{noreply,  NewState};
 
@@ -227,11 +264,11 @@ handle_cast({do_movement, SockPid,Movement}, State) ->
 
 handle_cast({a_player_check,SockPid}, State) ->
 	#sock_pid_battle_info{movement = Movement,lost_tick = LostTick,r_times = R_times} = get(SockPid),
-	case R_times>3 of
+	case R_times > 3 of
 		true ->ranc_client:send(a_player_check_error,SockPid,too_much);
 		false -> ok
 	end,
-	case LostTick >5 of
+	case LostTick > 5 of
 		true ->
 			put(SockPid,#sock_pid_battle_info{movement = 0, lost_tick = LostTick + 1, r_times = 0}),
 			case LostTick > 200 of

@@ -12,7 +12,7 @@
 -behaviour(gen_server).
 
 %% API
--export([start_link/0]).
+-export([start_link/3,match_a_player/3]).
 
 %% gen_server callbacks
 -export([init/1,
@@ -23,23 +23,23 @@
   code_change/3]).
 
 -define(SERVER, ?MODULE).
-
--record(state, {matchList}).
-
+-include("base_config.hrl").
+-record(state, {matchList,rooms,sock_pid_account_table,account_bank}).
+-record(matcher,{rank,account_id}).
 %%%===================================================================
 %%% API
 %%%===================================================================
-
+match_a_player(_Socket,_SPid,_Mode) -> ok.
 %%--------------------------------------------------------------------
 %% @doc
 %% Starts the server
 %%
 %% @end
 %%--------------------------------------------------------------------
--spec(start_link() ->
+-spec(start_link(A::term(),B::term()) ->
   {ok, Pid :: pid()} | ignore | {error, Reason :: term()}).
-start_link() ->
-  gen_server:start_link( ?MODULE, [], []).
+start_link(RoomList,SPAT,ABank) ->
+  gen_server:start_link( {local,?SERVER},?MODULE, [RoomList,SPAT,ABank], []).
 
 %%%===================================================================
 %%% gen_server callbacks
@@ -59,9 +59,9 @@ start_link() ->
 -spec(init(Args :: term()) ->
   {ok, State :: #state{}} | {ok, State :: #state{}, timeout() | hibernate} |
   {stop, Reason :: term()} | ignore).
-init([]) ->
+init([RoomList,SPAT,ABank]) ->
   MatchList = ets:new(matchlist,[ordered_set]),
-  {ok, #state{matchList = MatchList}}.
+  {ok, #state{matchList = MatchList,rooms = RoomList,sock_pid_account_table = SPAT,account_bank = ABank}}.
 
 %%--------------------------------------------------------------------
 %% @private
@@ -94,6 +94,37 @@ handle_call(_Request, _From, State) ->
   {noreply, NewState :: #state{}} |
   {noreply, NewState :: #state{}, timeout() | hibernate} |
   {stop, Reason :: term(), NewState :: #state{}}).
+handle_cast({match_a_player,_Socket,SPid,match}, State = #state{matchList = MList,account_bank = ABank,sock_pid_account_table = SPAT}) ->
+
+  [{SPid,#sock_pid_account_info{account_id = Account_id}}] = ets:lookup(SPAT,SPid),
+  [{Account_id,#account_info{account_check = #account_check{rank = Rank}}}] = ets:lookup(ABank,Account_id),
+
+  A_matcher_key = #matcher{rank = Rank,account_id = Account_id},
+  ets:insert(MList,{A_matcher_key,matching}),
+
+  {noreply, State};
+
+handle_cast({match_a_player,Socket,SPid,party}, State = #state{rooms = RoomTable,account_bank = ABank,sock_pid_account_table = SPAT}) ->
+
+  [{SPid,#sock_pid_account_info{account_id = Account_id}}] = ets:lookup(SPAT,SPid),
+  [{Account_id,#account_info{account_check = #account_check{rank = Rank}}}] = ets:lookup(ABank,Account_id),
+
+  Fun =
+    fun ({RoomPid,#room_info{average_rank = AVR}},{LastAbs,LastRoomPid}) ->
+      NowAbs = abs (Rank - AVR),
+      case NowAbs <LastAbs of
+        true -> {NowAbs,RoomPid};
+        false -> {LastAbs,LastRoomPid}
+      end
+  end,
+
+  {_Abs,OkRoomPid} =  ets:foldl(Fun,{1000000,undefined},RoomTable),
+
+  zone:join_room(OkRoomPid,Socket,SPid,Rank),
+
+
+  {noreply, State};
+
 handle_cast(_Request, State) ->
   {noreply, State}.
 

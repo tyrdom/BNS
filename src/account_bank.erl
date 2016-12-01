@@ -25,7 +25,7 @@
 
 -define(SERVER, ?MODULE).
 
--include("account_base_config.hrl").
+-include("base_config.hrl").
 %%%===================================================================
 %%% API
 %%%===================================================================
@@ -52,7 +52,7 @@ create(AccountId,Password,Socket,SPid) ->
 -spec(start_link() ->
 	{ok, Pid :: pid()} | ignore | {error, Reason :: term()}).
 start_link() ->
-	gen_server:start_link(?MODULE, [], []).
+	gen_server:start_link({local,?SERVER},?MODULE, [], []).
 
 %%%===================================================================
 %%% gen_server callbacks
@@ -78,8 +78,8 @@ init([]) ->
 	{ok,MySqlPid} = mysql:start_link([{host, ?MYSQL_IP}, {user, ?MYSQL_ID},
 		{password, ?MYSQL_PS}, {database, ?MYSQL_DB}]),
 	link(MySqlPid),
-	{ok,ZonePid} = zone:start_link(),
-	{ok, #bank_state{accountBank = AccountBank, sock_pid_account_table = Socket_Account_Table,mysqlPid = MySqlPid,zonePid = ZonePid}}.
+	zone:start_link(Socket_Account_Table,AccountBank),
+	{ok, #bank_state{accountBank = AccountBank, sock_pid_account_table = Socket_Account_Table,mysqlPid = MySqlPid}}.
 
 %%--------------------------------------------------------------------
 %% @private
@@ -131,12 +131,12 @@ handle_cast({login,Account,Password,Socket, SPid}, State = #bank_state{accountBa
 
 
 					{ok,Account_Check} = get_account_check_in_DB(Account,Pid),
-					ets:insert(AcBank, {Account,#account_info{account_login =  AccountLogin,account_check = Account_Check}}),
+
+          ets:insert(AcBank, {Account,#account_info{account_login =  AccountLogin,account_check = Account_Check}}),
 					ets:insert(SPid_Ac_Table, {SPid,#sock_pid_account_info{account_id = Account, socket = Socket,special_status = access}}),
-				  %	TODO	zone:inZone(Account,Socket, SPid),
 
 					ranc_client:send(login,SPid,Socket,ok);
-				  % TODO In startzone
+
 				[[_Bin_Ac,_Other]] ->
 					ranc_client:send(login,SPid,Socket,wrong_ps);
 
@@ -185,8 +185,7 @@ handle_cast({create,AccountId,Password,Socket, SPid}, State) ->
 			ranc_client:send(create,SPid,Socket,same);
 
 		[] ->
-			ok = mysql:query(Pid, "INSERT INTO account_auth (account_id, password) VALUES (?, ?)", [AccountId, PasswordInDB]),
-			ok = mysql:query(Pid, "INSERT INTO account_info (account_id, gold) VALUES (?, ?)", [AccountId, 0]),
+     ok = init_account_in_DB(AccountId, PasswordInDB,Pid),
 
 			ranc_client:send(create,SPid,Socket,ok)
 	end,
@@ -195,7 +194,7 @@ handle_cast({create,AccountId,Password,Socket, SPid}, State) ->
 handle_cast({quit,Socket, SPid, Type}, State = #bank_state{sock_pid_account_table = SAT,accountBank = ACBank}) ->
   case ets:lookup(SAT, Socket) of
     [{Socket, AccountId}] -> ets:delete(ACBank, AccountId);
-    [] -> io:format("ets waring bank table not match ~n"),
+    [] -> io:format("ets waring : bank table not match ~n"),
       AcList = ets:match(ACBank, {'$1', #account_info{
         account_login = #account_login{socket = Socket,
           sPid = '_', password_in_db = '_'},
@@ -290,7 +289,7 @@ get_account_check_in_DB(Account,Pid) ->
 		mysql:query(Pid, <<"SELECT nickname,gold FROM account_info WHERE account_id = ? ">>, [Account]),
 	case Rows of
 
-		[[Nickname,Gold]] ->
+		[[Nickname,Gold,Rank]] ->
 		#account_check{nickname = Nickname,gold = Gold};
 		_Other ->
 			ok = mysql:query(Pid, "INSERT INTO account_info (account_id, gold) VALUES (?, ?)", [Account, 0]),
@@ -298,3 +297,7 @@ get_account_check_in_DB(Account,Pid) ->
 			#account_check{nickname = <<"nick">> ,gold = 0}
 	end.
 
+init_account_in_DB(AccountId, PasswordInDB,Pid) ->
+  ok = mysql:query(Pid, "INSERT INTO account_auth (account_id, password) VALUES (?, ?)", [AccountId, PasswordInDB]),
+  ok = mysql:query(Pid, "INSERT INTO account_info (account_id, gold) VALUES (?, ?)", [AccountId, 0]),
+  ok.

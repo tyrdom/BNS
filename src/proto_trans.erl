@@ -11,21 +11,24 @@
 -include("fullpow_pb.hrl").
 %% API
 -export([call/3,call/4, co_call/5,reply/2,ac_call/4]).
-ac_call({battle,RoomPid},AcMsg,_Socket,SPid) -> ok,
-		room:do_movement(RoomPid, SPid,	AcMsg).
+
 
 call(exc_quit,Socket,Pid) ->
 	co_call(quit,7,exception,Socket,Pid).
 
-call(Status,<<1:8,AcMsg/binary>>,Socket,Pid) ->
+call(Status,<<1:8,ActMsg/binary>>,Socket,Pid) ->
 
 
-	ac_call(Status,AcMsg,Socket,Pid);
+	act_call(Status,AcMsg,Socket,Pid);
 
 call(Status,<<Number:32,Msg/binary>>,Socket,Pid) ->
 
 
 	co_call(Status,Number,Msg,Socket,Pid).
+
+
+act_call({battle,RoomPid},AcMsg,_Socket,SPid) -> ok,
+	room:do_movement(RoomPid, SPid,	AcMsg).
 
 co_call(unknown,3,Msg,Socket,Pid) ->
 
@@ -54,10 +57,19 @@ co_call(_Any,7,Msg,Socket,Pid) ->
 
 	account_bank:quit(Socket,Pid,Msg),
 	quit;
+%%
+%%
+%%//11 请求加入 状态需要access 发出后状态为join
+%%message AccountJoinReq {
+%%required int32 type = 1; // 0:指定进程加入模式  1：匹配快速加入：party模式，随加随退  2：比赛匹配加入：match模式
+%%required int32 roomPid = 2; //指定进程
+%%}
 
-co_call(access,15,Msg,Socket,SPid) ->
 
-				{join,undefine};
+co_call(access,11,Msg,Socket,SPid) ->
+	{accountjoinreq,Type,Room_Pid} = fullpow_pb:decode_accountjoinreq(Msg),
+	zone:join(Type,Room_Pid,Socket,SPid),
+				{join,undefined};
 
 co_call(_Other,_Number,_Msg,_Socket,_Pid) ->
 	error.

@@ -60,11 +60,11 @@ message BeatResp {
 
 //11 请求加入 状态需要access 发出后状态为join
 message AccountJoinReq {
-    required int32 type = 1; // 0:指定号码加入 1：自动加入：party模式  2  自动加入：match模式
-  required int32 number = 2;
+    required int32 type = 1; // 0:指定进程加入模式  1：匹配快速加入：party模式，随加随退  2：比赛匹配加入：match模式
+    required int32 roomPid = 2; //指定进程
 }
 
-//12 服务端回复退出账户  此时状态为 join 成功状态更新为battle 不成功更新为 access
+//12 服务端回复加入房间  此时状态为 join 成功状态更新为{battle，RoomPID} 不成功更新为 access
 message AccountJoinResp {
     repeated int32 reply = 1; //1成功，2人满 3超时
 }

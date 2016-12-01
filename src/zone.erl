@@ -12,7 +12,7 @@
 -behaviour(gen_server).
 
 %% API
--export([start_link/0,inZone/3]).
+-export([start_link/2,inZone/3, join/4]).
 
 %% gen_server callbacks
 -export([init/1,
@@ -23,23 +23,28 @@
 	code_change/3]).
 
 -define(SERVER, ?MODULE).
--include("account_base_config.hrl").
+-include("base_config.hrl").
 -record(state, {sock_pid_account_table, room_table}).
--record(room_info,{type,player_num}).
+
 %%%===================================================================
 %%% API
 %%%===================================================================
+join(Type,RoomPid,Socket,SPid) ->
+	gen_server:cast(?SERVER,{join,Type,RoomPid,Socket,SPid}).
 
+join_room(RoomPid,Socket,SPid,Rank) ->
+	gen_server:cast(?SERVER,{join_room,RoomPid,Socket,SPid,Rank}).
 %%--------------------------------------------------------------------
 %% @doc
 %% Starts the server
 %%
 %% @end
 %%--------------------------------------------------------------------
--spec(start_link() ->
-	{ok, Pid :: pid()} | ignore | {error, Reason :: term()}).
-start_link() ->
-	gen_server:start_link( ?MODULE, [], []).
+
+start_link(SPAT,ABank) ->
+	gen_server:start_link({local,?SERVER}, ?MODULE, [SPAT,ABank], []).
+
+
 
 %%%===================================================================
 %%% gen_server callbacks
@@ -59,10 +64,11 @@ start_link() ->
 -spec(init(Args :: term()) ->
 	{ok, State :: #state{}} | {ok, State :: #state{}, timeout() | hibernate} |
 	{stop, Reason :: term()} | ignore).
-init([]) ->
+init([SPAT,ABank]) ->
 
 	RoomList = ets:new(roomList,[set]),
-	{ok, #state{room_table = RoomList},0}.
+	matcher:start_link(RoomList,SPAT,ABank),
+	{ok, #state{room_table = RoomList,sock_pid_account_table = SPAT}}.
 
 %%--------------------------------------------------------------------
 %% @private
@@ -95,16 +101,39 @@ handle_call(_Request, _From, State) ->
 	{noreply, NewState :: #state{}, timeout() | hibernate} |
 	{stop, Reason :: term(), NewState :: #state{}}).
 
-handle_cast({create_room,Type}, State = #state{room_table = RTable,sock_pid_account_table = SPAT}) ->
-	RoomPid = room:start_link(SPAT),
-	ets:insert(RTable,{RoomPid,#room_info{type = Type}}),
+handle_cast({create_room,Type,AllowPlayers,Info}, State = #state{room_table = RTable,sock_pid_account_table = SPAT}) ->
+	RoomPid = room:start_link(SPAT,AllowPlayers,RTable),
+	ets:insert(RTable,{RoomPid,#room_info{type = Type,allow_players = AllowPlayers,average_rank = 0,player_num = 0 ,info = Info}}),
 	{noreply, State};
 
-handle_cast({join_room,RoomPid,_Socket,SPid}, State = #state{room_table = RTable, sock_pid_account_table = SAT}) ->
-	RoomPid,#room_info{player_num = PNum} = ets:lookup(RTable,RoomPid),
-	 case PNum < ?ROOMMAX of
-		 true -> room:join_room(RoomPid,SPid);
-		 false -> fullroom
+handle_cast({join,0,RoomPid,Socket,SPid}, State) ->
+
+	join_room(RoomPid,Socket,SPid,0),
+	{noreply, State};
+
+handle_cast({join,1,_RoomPid,Socket,SPid}, State) ->
+	matcher:match_a_player(Socket,SPid,party),
+	{noreply, State};
+
+handle_cast({join,2,_RoomPid,Socket,SPid}, State) ->
+	matcher:match_a_player(Socket,SPid,match),
+	{noreply, State};
+
+handle_cast({join_room,RoomPid,_Socket,SPid,Rank}, State = #state{room_table = RTable,sock_pid_account_table = SPAT}) ->
+
+	[{RoomPid,#room_info{player_num = PNum,allow_players = Allow_Players}}] = ets:lookup(RTable,RoomPid),
+	 case PNum < ?ROOM_MAX of
+		 true ->
+			 case Allow_Players  of
+				undefined -> room:join_room(RoomPid,SPid,Rank);
+				 Players -> [{SPid,#sock_pid_account_info{account_id = AccountId}}] = ets:lookup(SPid,SPAT),
+					 					case lists:member(AccountId,Players) of
+											true -> room:join_room(RoomPid,SPid,Rank);
+											flase -> not_allowed
+										end
+
+			 end;
+		 false -> full_room
 	 end,
 
 	{noreply, State};
@@ -136,13 +165,7 @@ handle_cast(_Request, State) ->
 	{noreply, NewState :: #state{}} |
 	{noreply, NewState :: #state{}, timeout() | hibernate} |
 	{stop, Reason :: term(), NewState :: #state{}}).
-handle_info({sock_pid_account_table,SAT}, State) ->
-	NewState = State#state{sock_pid_account_table = SAT},
-	{noreply, NewState};
 
-handle_info(timeout, State) ->
-	account_bank:get_state(self(),sock_pid_account_table),
-	{noreply, State, 10000};
 handle_info(_Info, State) ->
 	{noreply, State}.
 
@@ -182,4 +205,3 @@ code_change(_OldVsn, State, _Extra) ->
 
 inZone(Account,Socket, SPid) ->gen_server:call(?SERVER,{inZone,Socket, SPid,Account}).
 
-matchroom(_Rooms) ->todo. %TODO get a room which have a seat
