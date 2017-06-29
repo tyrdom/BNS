@@ -36,8 +36,8 @@ match_a_player(_Socket,_SPid,_Mode) -> ok.
 %%
 %% @end
 %%--------------------------------------------------------------------
--spec(start_link(A::term(),B::term()) ->
-  {ok, Pid :: pid()} | ignore | {error, Reason :: term()}).
+%%-spec(start_link(A::term(),B::term()) ->
+%%  {ok, Pid :: pid()} | ignore | {error, Reason :: term()}).
 start_link(RoomList,SPAT,ABank) ->
   gen_server:start_link( {local,?SERVER},?MODULE, [RoomList,SPAT,ABank], []).
 

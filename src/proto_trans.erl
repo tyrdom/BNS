@@ -10,7 +10,7 @@
 -author("Administrator").
 -include("fullpow_pb.hrl").
 %% API
--export([call/3,call/4, co_call/5,reply/2,ac_call/4]).
+-export([call/3,call/4, co_call/5,reply/2,act_call/4]).
 
 
 call(exc_quit,Socket,Pid) ->
@@ -19,7 +19,7 @@ call(exc_quit,Socket,Pid) ->
 call(Status,<<1:8,ActMsg/binary>>,Socket,Pid) ->
 
 
-	act_call(Status,AcMsg,Socket,Pid);
+	act_call(Status,ActMsg,Socket,Pid);
 
 call(Status,<<Number:32,Msg/binary>>,Socket,Pid) ->
 
